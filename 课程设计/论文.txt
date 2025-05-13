@@ -1,0 +1,216 @@
+Embedding even-length cycles in a hexagonal
+honeycomb mesh
+XIAOFAN YANG*†‡, YUAN YAN TANG†, JIANQIU CAO‡ and QING LU§
+†College of Computer Science, Chongqing University, Chongqing 400044, China
+‡School of Computer and Information, Chongqing Jiaotong University,
+Chongqing 400074, China
+§Department of Chemistry, Eighth Senior School, Chongqing 400030, China
+(Received 20 December 2005; revised version received 09 April 2007; accepted 26 April 2007)
+The existence and construction of cycles of various lengths in an interconnection network are important
+issues in efficiently executing ring-structured parallel algorithms in such a network. The hexagonal
+honeycomb mesh (HHM) is regarded as a promising candidate for interconnection networks. In this
+paper we address the problem of how to embed even-length cycles in an HHM. We prove that an HHM
+of order t ≥ 3 admits a cycle of length l for each even number l such that l = 6 or 10 ≤ l ≤ 6t2 − 2.
+We also describe a systematic method for building these cycles.
+Keywords: Interconnection network; Hexagonal honeycomb mesh; Cycle embedding
+ACM CCS: B.4.3
+1. Introduction
+It is well known that many classical parallel algorithms possess a ring-structured task graph. In
+order to implement a ring-structured parallel algorithm efficiently on a specific multicomputer
+system, it is essential to map the tasks owned by the parallel algorithm to the nodes of the
+underlying interconnection network so that any two tasks that are adjacent in the ring are
+mapped to two adjacent nodes of the network [1]. If the number of tasks in the ring-structured
+parallel algorithm equals the number of nodes in the associated interconnection network, it is
+desirable for this network to have a Hamiltonian cycle (i.e. a cycle which passes every node
+of the network). In real situations, a ring-structured parallel algorithm with few tasks is often
+executed on an interconnection network with a larger number of nodes (this is especially the
+case for coarse-grained parallel algorithms), and efficient mapping demands that the network
+admit a cycle of some given length. An interconnection network which possesses cycles of
+various lengths is preferred for this purpose.
+Stojmenovic [2] proposed two types of honeycomb structure as candidates for intercon-
+nection networks: the honeycomb mesh and the honeycomb torus. An important advantage
+*Corresponding author. Email: xf_yang1964@yahoo.com, xf_yang@163.com
+International Journal of Computer Mathematics
+ISSN 0020-7160 print/ISSN 1029-0265 online © 2008 Taylor & Francis
+http://www.tandf.co.uk/journals
+DOI: 10.1080/00207160701421144
+Downloaded By: [University Of Melbourne] At: 08:31 3 March 2008 202 X. Yang et al.
+of honeycomb networks over their mesh/torus counterparts is that the number of links per
+node is restricted to two or three, which can significantly decrease the complexity of their
+hardware implementation. Because of this attractive feature, honeycomb networks and their
+generalizations have received considerable attention [3–16].
+Although the cycle-embedding capabilities of honeycomb torus networks and their gener-
+alizations have been studied intensively [6,7,9,12], these networks are difficult to implement
+in VLSI layout [2]. In contrast, the asymmetric honeycomb mesh can easily be implemented
+on a single board, which makes it a more appealing choice from the practical viewpoint [14].
+Although a hexagonal honeycomb mesh (HHM) of order t ≥ 2 is not Hamiltonian, its cycle-
+embedding capability is still worth studying, as indicated previously. To our knowledge, no
+such investigation has been reported in the literature.
+In this paper we address the existence of cycles of various lengths in an HHM. We prove
+that an HHM of order t ≥ 3 admits a length-l cycle for each even number l such that l = 6 or 
+10 ≤ l ≤ 6t2 − 2. A systematic method for building these cycles is also presented. The result
+obtained partially justifies the utility of HHM.
+The remainder of the paper is organized as follows. Section 2 presents the definition of
+hexagonal honeycomb mesh, and describes a node-labelling scheme and a cycle-labelling
+scheme. Section 3 establishes the result. Finally, some conclusions are presented in section 4.
+2. Preliminaries
+For fundamental graph-theoretical terminologies the reader is referred to [17]. For a cycle C
+in a graph, let E(C) denote the set of all the edges on C. An l-cycle is a cycle of length l.
+Given two sets S1 and S2, we let S1 ⊕ S2 = (S1 − S2 ) ∪ (S2 − S1).
+DEFINITION 1 A hexagonal honeycomb mesh (HHM) of order t is defined recursively as
+follows:
+(i) An HHM of order 1 is a 6-cycle drawn on the plane as shown in figure 1(a).
+(ii) For t ≥ 2, an HHM of order t is a graph obtained by adding a set of 6(t − 1) 6-cycles
+around the border of an HHM of order t − 1 in an edge-sharing manner ( figures 1(b)–
+1(d)).
+An HHM of order t has a total of 6t2 nodes and 9t2 − 3t edges. Figure 1 shows four small
+HHMs.
+We now introduce some notation to enable us to label a node or a 6-cycle in an HHM.
+DEFINITION 2 Consider a 6-cycle in an HHM. The node that is on the north (south, northeast,
+southeast, northwest, southwest) corner of the 6-cycle is referred to as the N-node (S-node,
+NE-node, SE-node, NW-node, SW-node) of this 6-cycle ( figure 2).
+DEFINITION 3 Consider an HHM of order t ≥ 2. A 6-cycle that is on the boundary of the
+HHM is referred to as a B cycle of the HHM.
+(i) The B cycle of the HHM that is on the east (west, northeast, southeast, northwest,
+southwest) corner of the HHM is referred to as the E-B cycle (W-B cycle, NE-B cycle,
+SE-B cycle, NW-B cycle, SW-B cycle) of the HHM.
+(ii) The rth B cycle of the HHM when counting in order from the NE-B cycle to the E-B cycle
+( from the SE-B cycle to the E-B cycle, from the NW-B cycle to theW-B cycle, from the SW-B
+cycle to the W-B cycle, from the NE-B cycle to the NW-B cycle, from the SE-B cycle to
+Downloaded By: [University Of Melbourne] At: 08:31 3 March 2008 Cycle embedding in honeycomb mesh 203
+Figure 1. An HHM of order t: (a) t = 1; (b) t = 2; (c) t = 3; (d) t = 4.
+the SW-B cycle) of the HHM is referred to as the NE-E(r)-B cycle (SE-E(r)-B cycle,
+NW-W(r)-B cycle, SW-W(r)-B cycle, NE-NW(r)-B cycle, SE-SW(r)-B cycle) of the HHM.
+Figure 3 illustrates the terminologies introduced in Definition 3.
+DEFINITION 4 Consider an HHM of order t and an integer s where 1 ≤ s ≤ t. The HHM of
+order s that is at the centre of the original HHM is referred to as the central sub-HHM of
+order s of the original HHM (see figure 4 for an illustration).
+Figure 2. Labelling of the six nodes in a given 6-cycle of an HHM.
+Downloaded By: [University Of Melbourne] At: 08:31 3 March 2008 204 X. Yang et al.
+Figure 3. Labelling of some 6-cycles on the boundary of an HHM of order 4.
+Figure 4. Three central sub-HHMs of an HHM of order 4.
+Figure 5. Labelling of a 6-cycle and a node in an HHM of order 4.
+Downloaded By: [University Of Melbourne] At: 08:31 3 March 2008 Cycle embedding in honeycomb mesh 205
+Using the notation defined above, it is easy to label a node or a 6-cycle in an HHM. For
+example, in figure 5 the shaded 6-cycle is labelled as the NW-B cycle of the central sub-HHM
+of order 2, and the encircled node is labelled as the NW-node on this 6-cycle.
+3. Main result
+The following facts are obvious.
+• An HHM does not contain any cycles of odd length because it is a bipartite graph.
+• An HHM does not admit any cycles of length 6t2 because it is not a Hamiltonian graph.
+• An HHM has a 6-cycle.
+• An HHM has neither a 4-cycle nor an 8-cycle.
+The following question now arises: For any given even number l with 10 ≤ l ≤ 6t2 − 2,
+does an HHM of order t contain a cycle of length l? We now answer this question.
+THEOREM 1 Consider an HHM of order t ≥ 3. Let l be an even number with 10 ≤ l ≤ 6t2 − 2.
+Then the HHM contains a cycle of length l.
+Proof Clearly, the HHM contains a 10-cycle. Next, let us assume that 12 ≤ l ≤ 6t2 − 2. We
+need to examine four possible cases with respect to the value of l.
+Case 1 l = 6 t2 – 2. Look at two nodes: the NW-node on the NW-W(2)-B cycle of the HHM
+and the SW-node on the W-B cycle of the central sub-HHM of order 2. It can be seen
+that the graph obtained by deleting these two nodes from the HHM contains a unique
+Hamiltonian cycle ( figure 6), which is a cycle of length 6t2 – 2 of the original HHM.
+Case 2 l = 6t2 − 4k − 2, where k is an integer with 1 ≤ k ≤ 1.5t2 − 3.5 (equivalently, 12 ≤
+l ≤ 6t2 − 6 and 6t2 − l ≡ 2 (mod 4)). We distinguish between two possibilities of the
+parity of t.
+Case 2.1 t is even. Let C denote the cycle described in case 1, and let E = E(C). Let
+C1, C 2 , . . . , C k denote the first to kth 6-cycles when counting in the order
+determined by the set of arrows shown in figure 7. For i from 1 to k, we 
+let E = E ⊕ E(Ci). When this procedure has been completed, a cycle of
+length 6t2 − 4k − 2 is obtained.
+Case 2.2 t is odd. Let C denote the cycle given in case 1, and let E = E(C). Let C0
+denote the central 6-cycle of the HHM. Let C1, C 2 , . . . , C k−1 denote the
+first to (k − 1)th 6-cycles when counting in the order determined by the set
+of arrows shown in figure 8. For i from 0 to k − 1, we let E = E ⊕ E(Ci).
+When this procedure has been completed, a cycle of length 6t2 − 4k − 2 is 
+obtained.
+Case 3 l = 6t2 − 4. We proceed by considering the parity of t.
+Case 3.1 t is odd. Look at four nodes: the NW-node on the NW-W(2)-B cycle of the
+HHM, and the N-node, the NW-node, and the SW-node on the W-B cycle
+of the central sub-HHM of order 3. It can be seen that the graph obtained
+by deleting these four nodes from the HHM contains a unique Hamiltonian
+cycle ( figure 9), which is a cycle of length 6t2 – 4 of the original HHM.
+Case 3.2 t is even. Look at four nodes: the N-node and the NW-node on the NW-B
+cycle of the HHM, the S-node on the NW-W(2)-B cycle of the HHM, and
+the SW-node on the W-B cycle of the central sub-HHM of order 2. It can
+be seen that the graph obtained by deleting these four nodes from the HHM
+Downloaded By: [University Of Melbourne] At: 08:31 3 March 2008 206 X. Yang et al.
+Figure 6. A cycle of length 6t2 − 2 in an HHM of size t: (a) t = 3; (b) t = 4; (c) t = 5; (d) t = 6.
+Figure 7. The order in which a set of k 6-cycles are selected to build a cycle of length 6t2 − 4k − 2 in an HHM 
+of even size t: (a) t = 4; (b) t = 6.
+Downloaded By: [University Of Melbourne] At: 08:31 3 March 2008 Cycle embedding in honeycomb mesh 207
+Figure 8. The order in which a set of k 6-cycles are selected to build a cycle of length 6t2 − 4k − 2 in an HHM 
+of odd size t: (a) t = 3; (b) t = 5.
+contains a unique Hamiltonian cycle ( figure 10), which is a cycle of length
+6t2 − 4 of the original HHM.
+Case 4 l = 6t2 − 4k − 4, where k is an integer with 1 ≤ k ≤ 1.5t2 − 4 (equivalently, 12 ≤
+l ≤ 6t2 − 8 and 6t2 − l ≡ 0 (mod 4)). Again, we need to consider the parity of t.
+Case 4.1 t is odd. Let C denote the cycle presented in case 3.1, and let E = E(C). Let C1,
+C2, ..., Ck denote the first to kth 6-cycles when counting in the order determined
+by the set of arrows shown in figure 11. For i from 1 to k, we let E = E ⊕ E(Ci).
+On completion of this procedure, a cycle of length 6t2 − 4k − 4 is formed.
+Case 4.2 t is even. Let C denote the cycle given in case 3.2, and let E = E(C). Let C1, C2,
+..., Ck denote the first to kth 6-cycles when counting in the order determined by
+the set of outer arrows followed by the set of inner arrows shown in figure 12. For
+i from 1 to k, we let E = E ⊕ E(Ci). When this procedure has been completed,
+a cycle of length 6t2 − 4k − 4 is formed.
+This completes the proof of Theorem 1. 
+For completeness and by brute force, we obtain the following theorem.
+Figure 9. A cycle of length 6t2 − 4 in an HHM of odd order t: (a) t = 3; (c) t = 5.
+Downloaded By: [University Of Melbourne] At: 08:31 3 March 2008 208 X. Yang et al.
+Figure 10. A cycle of length 6t2 − 4 in an HHM of even order t: (a) t = 4; (c) t = 6.
+Figure 11. The order in which a set of k 6-cycles are selected to build a cycle of length 6t2 − 4k − 4 in an HHM 
+of odd order t: (a) t = 3; (b) t = 5.
+Figure 12. The order in which a set of 6-cycles are visited to build a cycle of length 6t2 − 4k − 4 in an HHM of
+even order t: (a) t = 4; (b) t = 6.
+Downloaded By: [University Of Melbourne] At: 08:31 3 March 2008 Cycle embedding in honeycomb mesh 209
+THEOREM 2 An HHM of order 2 admits a cycle of length l ∈ { 10, 12, 14, 16, 18, 22}, and
+admits no cycle of length 20.
+4. Conclusions
+The existence of cycles of various lengths in an interconnection network is an important
+issue in evaluating how well a ring-structured parallel algorithm can be implemented on
+this network. The hexagonal honeycomb mesh is a promising candidate for interconnec-
+tion networks. In this paper we have proved that a hexagonal honeycomb mesh possesses a
+cycle that has as length any value within a broad range. A systematic method for building
+these cycles has also been presented. The result obtained justifies the utility of this type of
+honeycomb mesh.
+In future work we will extend the method used in this paper to establish similar results
+for other types of honeycomb network such as the rectangular honeycomb mesh and the
+parallelogramic honeycomb mesh [2].
+Acknowledgements
+The authors wish to express their gratitude to the anonymous referees for their constructive
+suggestions that have greatly improved the quality of this paper. This work is supported by
+Program for New Century Excellent Talent of Educational Ministry of China (NCET-05–
+0759), Doctorate Foundation of Educational Ministry of China (20050611001), and Natural
+Science Foundation of Chongqing CSTC (2006BB2231, 2005BB2191).
+References
+[1] Parhami, B., 1999, An Introduction to Parallel Processing: Algorithms and Architectures (New York: Plenum).
+[2] Stojmenovic, I., 1997, Honeycomb networks: topological properties and communication algorithms. IEEE
+Transactions on Parallel and Distributed Systems, 8, 1036–1042.
+[3] Bein, D., Bein, W.W., Brajkovska, N. and Latifi, S., 2004, Optimal embedding of honeycomb networks into
+hypercubes. Parallel Processing Letters, 14, 367–375.
+[4] Carle, J., Myoupo, J.F. and Seme, D., 1999, All-to-all broadcasting algorithms on honeycomb networks and
+applications. Parallel Processing Letters, 9, 539–550.
+[5] Carle, J., Myoupo, J.F. and Stojmenovic, I., 2001, Higher dimensional honeycomb networks. Journal of
+Interconnection Networks, 2, 391–420.
+[6] Cho, H. and Hsu, L., 2002, Ring embedding in faulty honeycomb rectangular torus. Information Processing
+Letters, 84, 277–284.
+[7] Cho, H. and Hsu, L., 2003, Generalized honeycomb torus. Information Processing Letters, 86, 185–190.
+[8] Megson, G.M., Liu, X. and Yang, X., 1999, Fault-tolerant ring embedding in a honeycomb torus with node
+failures. Parallel Processing Letters, 9, 551–561.
+[9] Megson, G.M., Yang, X. and Liu, X., 1999, Honeycomb tori are Hamiltonian. Information Processing Letters,
+72, 99–103.
+[10] Parhami, B. and Kwai, D., 2001, A unified formulation of honeycomb and diamond networks. IEEETransactions
+on Parallel and Distributed Systems, 12, 74–80.
+[11] Yang, X., 2004, The diameter of honeycomb rhombic tori. Applied Mathematics Letters, 17, 167–172.
+[12] Yang, X., Evans, D.J., Lai, H. and Megson, G.M., 2004, Generalized honeycomb torus is Hamiltonian.
+Information Processing Letters, 92, 31–37.
+[13] Yang, X., Megson, G.M., Tang, Y. and Evans, D.J., 2005, Diameter of parallelogramic honeycomb torus.
+Computers and Mathematics with Applications, 50, 1477–1486.
+[14] Yang, X., Megson, G.M., Zhang, S. and Liu, X., 2004, A solution to the three disjoint path problem on honeycomb
+meshes. Parallel Processing Letters, 14, 399–410.
+[15] Yang, X., Megson, G.M., Zhang, S. and Liu, X., 2004, A solution to the three disjoint path problem on honeycomb
+tori. Parallel Processing Letters, 14, 411–422.
+[16] Yang, X., Tang, Y.Y., Lu, Q. and He, Z., 2006, Optimal doublecast path in hexagonal honeycomb mesh. Applied
+Mathematics and Computation, 182, 1267–1279.
+[17] Harary, F., 1969, Graph Theory (Reading, MA: Addison-Wesley)

@@ -1,0 +1,1122 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+蜂窝网格偶数长度环嵌入 - 基于Yang等人2008年论文《Embedding even-length cycles in a hexagonal honeycomb mesh》
+"""
+import tkinter as tk
+import math
+from collections import defaultdict, deque
+from tkinter import messagebox # 明确导入 messagebox
+
+class HexGrid:
+    """六边形蜂窝网格生成器和环构造器"""
+
+    def __init__(self, t):
+        """初始化HHM(t)，t为网格阶数"""
+        self.t = t # 网格阶数，对应论文中的t
+        self.hexagons = set()  # 存储所有六边形的轴向坐标(q,r) {(q,r), ...}
+        self.edges = []  # 存储所有边 [(x1,y1,x2,y2), ...] （像素坐标）
+        self.vertices = {}  # 存储所有顶点 {(x,y): True, ...} （像素坐标, key是精确浮点元组）
+        self.vertex_edges = defaultdict(list)  # 顶点到边的映射 {(x,y): [(x1,y1,x2,y2), ...], ...}
+        self._exact_vertex_map = {} # (rounded_x, rounded_y) -> (exact_x, exact_y)
+        
+        self.hex_centers = {}  # 六边形中心像素坐标 (q,r) -> (x,y)
+        self.hex_vertices = {}  # 六边形顶点像素坐标 (q,r) -> [(x1,y1), (x2,y2), ...] (精确浮点元组列表)
+        
+        # 轴向坐标邻居方向 (pointy-top, 顺时针序, 从右(E)开始):
+        # E, SE, SW, W, NW, NE
+        self.axial_directions_clockwise = [ 
+            (1, 0), (1, -1), (0, -1),
+            (-1, 0), (-1, 1), (0, 1)
+        ]
+        self.generate_grid()
+
+    def generate_grid(self):
+        """生成阶数为t的HHM网格结构"""
+        self.hexagons.clear()
+        self.edges.clear()
+        self.vertices.clear()
+        self._exact_vertex_map.clear()
+        self.vertex_edges.clear()
+        self.hex_centers.clear()
+        self.hex_vertices.clear()
+        
+        # HHM(t) 的六边形满足 max(|q|, |r|, |s|) < t, 其中 s = -q-r
+        for q_coord in range(-self.t + 1, self.t):
+            for r_coord in range(max(-self.t + 1, -q_coord - self.t + 1), 
+                                 min(self.t, -q_coord + self.t)):
+                s_coord = -q_coord - r_coord
+                if max(abs(q_coord), abs(r_coord), abs(s_coord)) < self.t:
+                    self.hexagons.add((q_coord, r_coord))
+        
+        hex_pixel_size = 30  # 定义六边形在屏幕上的大小
+
+        for q, r in self.hexagons:
+            center_x = hex_pixel_size * (math.sqrt(3) * q + math.sqrt(3)/2 * r)
+            center_y = hex_pixel_size * (3/2 * r)
+            self.hex_centers[(q, r)] = (center_x, center_y)
+            
+            current_hex_vertices = []
+            for i in range(6): 
+                angle = math.pi/6 + i * math.pi/3 
+                vx = center_x + hex_pixel_size * math.cos(angle)
+                vy = center_y + hex_pixel_size * math.sin(angle)
+                
+                rounded_v_tuple = (round(vx, 6), round(vy, 6))
+                if rounded_v_tuple in self._exact_vertex_map:
+                    exact_v = self._exact_vertex_map[rounded_v_tuple]
+                else:
+                    exact_v = (vx, vy) 
+                    self.vertices[exact_v] = True 
+                    self._exact_vertex_map[rounded_v_tuple] = exact_v
+                current_hex_vertices.append(exact_v)
+            self.hex_vertices[(q, r)] = current_hex_vertices
+        
+        edge_set_for_dedup = set() 
+        for q, r in self.hexagons:
+            vertices_of_hex = self.hex_vertices[(q, r)]
+            for i in range(6):
+                v1_exact = vertices_of_hex[i]
+                v2_exact = vertices_of_hex[(i + 1) % 6]
+                edge_as_exact_vertex_pair = tuple(sorted((v1_exact, v2_exact))) 
+                if edge_as_exact_vertex_pair not in edge_set_for_dedup:
+                    edge_set_for_dedup.add(edge_as_exact_vertex_pair)
+                    edge_pixel_coords = (v1_exact[0], v1_exact[1], v2_exact[0], v2_exact[1])
+                    self.edges.append(edge_pixel_coords)
+                    self.vertex_edges[v1_exact].append(edge_pixel_coords)
+                    self.vertex_edges[v2_exact].append(edge_pixel_coords)
+    
+    def find_cycle(self, length):
+        """
+        根据论文定理查找指定长度的偶数环。
+        返回: (cycle_edges, hex_coords_to_color) 或 (None, None)
+        """
+        if length % 2 != 0:
+            messagebox.showerror("输入错误", "环的长度必须为偶数。")
+            return None, None
+
+        if self.t == 1:
+            if length == 6:
+                return self._get_hexagon_cycle_for_coloring((0, 0))
+            else:
+                messagebox.showinfo("提示", f"在HHM(1)中只存在长度为6的环。无法构造长度为 {length} 的环。")
+                return None, None
+
+        if self.t == 2:
+            valid_lengths_hhm2 = {6, 10, 12, 14, 16, 18, 22}
+            if length not in valid_lengths_hhm2:
+                messagebox.showinfo("提示", f"根据论文，在HHM(2)中不存在长度为 {length} 的环。")
+                return None, None
+        
+        if length == 6:
+            return self._get_hexagon_cycle_for_coloring((0, 0))
+        
+        if length == 10 and self.t >= 2:
+            return self._construct_10_cycle_with_hex_coloring()
+        
+        max_theoretical_len = 6 * self.t**2 - 2
+        
+        if self.t >= 2: 
+            if length > max_theoretical_len or (length < 10 and length !=6) :
+                 messagebox.showinfo("提示", f"目标长度 {length} 超出HHM({self.t})支持的范围 [6] U [10, {max_theoretical_len}]。")
+                 return None, None
+        elif self.t < 2 : 
+             return None, None 
+
+        if length == max_theoretical_len:
+            if self.t < 2 : 
+                messagebox.showerror("逻辑错误", "尝试为 t<2 构造最大环，这不符合预期。")
+                return None, None
+            return self._construct_cycle_figure6_style_spiral()
+        
+        # Case 2: l = 6t^2 - 2 - 4k (for k >= 1)
+        elif length < max_theoretical_len and (max_theoretical_len - length) % 4 == 0:
+            k_to_uncolor = (max_theoretical_len - length) // 4
+            if k_to_uncolor > 0:
+                # Step 1: Get the base coloring for l = 6t^2 - 2
+                base_edges_fig6, base_hex_list_fig6 = self._construct_cycle_figure6_style_spiral()
+
+                if base_hex_list_fig6 is None:
+                    messagebox.showinfo("提示", f"无法为HHM({self.t})构造基础最大环 (l={max_theoretical_len})，因此无法进行-4k操作。")
+                    return None, None
+
+                initial_colored_set = set(base_hex_list_fig6)
+                
+                # Step 2: Perform the uncoloring operation
+                # The set 'initial_colored_set' will be modified in place by this call.
+                uncoloring_successful = self._perform_case2_uncoloring(initial_colored_set, k_to_uncolor)
+
+                if uncoloring_successful:
+                    final_hex_coords_to_color_list = list(initial_colored_set)
+                    
+                    if not final_hex_coords_to_color_list and self.hexagons:
+                         messagebox.showinfo("提示", f"长度 {length} 的环构造 (-4k 操作) 导致没有六边形被着色。")
+                         return None, None # Or perhaps an empty list of edges and hexes?
+                    
+                    new_edges = self._get_boundary_edges_of_hex_region(initial_colored_set)
+                    
+                    # Optional: Verify length of new_edges against 'length'
+                    # if len(new_edges) != length:
+                    #    print(f"Warning: Case 2 (-4k) anelించింది预计长度 {length}, 实际边数 {len(new_edges)}")
+
+                    return new_edges, final_hex_coords_to_color_list
+                else:
+                    messagebox.showinfo("提示", f"无法为长度 {length} 执行-4k操作。可能在边界上未能找到足够的 {k_to_uncolor} 个可移除的已着色六边形，或者k值过大。")
+                    return None, None
+            # if k_to_uncolor == 0, it's max_len case, handled above.
+            # if k_to_uncolor < 0, (max_len - length) is negative, meaning length > max_len, which is an error.
+        
+        messagebox.showinfo("提示", f"长度为 {length} 的环的构造方法 (除了6, 10, 6t^2-2 和 6t^2-2-4k) 当前未被实现。")
+        return None, None
+
+    def _get_hexagon_cycle_for_coloring(self, hex_coord_qr):
+        """
+        获取单个六边形的边界边及其坐标（用于着色）。
+        返回: (edges_list, [hex_coord_qr])
+        """
+        if hex_coord_qr not in self.hex_vertices:
+            # print(f"警告: 六边形 {hex_coord_qr} 不存在于网格中。")
+            # 尝试使用(0,0)作为默认值，如果它存在
+            if (0,0) in self.hex_vertices:
+                hex_coord_qr = (0,0)
+            else: # 如果连(0,0)都不存在，则无法继续
+                return None, None 
+        
+        vertices_of_hex = self.hex_vertices[hex_coord_qr]
+        edges = []
+        for i in range(6):
+            v1 = vertices_of_hex[i]
+            v2 = vertices_of_hex[(i + 1) % 6]
+            edges.append((v1[0], v1[1], v2[0], v2[1]))
+        return edges, [hex_coord_qr]
+
+
+    def _construct_10_cycle_with_hex_coloring(self):
+        """构造长度为10的环，并返回其边界边和参与的两个六边形"""
+        hex1_qr = (0, 0)
+        hex2_qr = None
+        for direction in self.axial_directions_clockwise:
+            potential_neighbor_qr = (hex1_qr[0] + direction[0], hex1_qr[1] + direction[1])
+            if potential_neighbor_qr in self.hexagons:
+                hex2_qr = potential_neighbor_qr
+                break
+
+        if hex2_qr is None:
+            if self.t > 1 and self.hexagons:
+                # 尝试从网格中任意一个六边形开始寻找邻居对
+                 found_pair = False
+                 for h1_alt in self.hexagons:
+                     for direction_alt in self.axial_directions_clockwise:
+                         h2_alt = (h1_alt[0] + direction_alt[0], h1_alt[1] + direction_alt[1])
+                         if h2_alt in self.hexagons:
+                             hex1_qr = h1_alt
+                             hex2_qr = h2_alt
+                             found_pair = True
+                             break # 从内层 direction_alt 循环中断
+                     if found_pair:
+                         break # 从外层 h1_alt 循环中断
+            if hex2_qr is None :
+                messagebox.showerror("构造错误", "无法找到两个相邻的六边形来构造10环 (可能t过小或网格结构问题)。")
+                return None, None
+
+        hex_region_to_color = {hex1_qr, hex2_qr}
+        boundary_edges = self._get_boundary_edges_of_hex_region(hex_region_to_color)
+        
+        expected_length = 10
+        if len(boundary_edges) != expected_length:
+             # print(f"警告: 构造的 l=10 环的边界边数量为 {len(boundary_edges)}，预期为 {expected_length}")
+             pass
+             
+        if not self._verify_cycle_connectivity(boundary_edges) and boundary_edges:
+             # print("错误: 构造的 l=10 环的边界不连通或度数错误")
+             pass 
+             
+        return boundary_edges, list(hex_region_to_color)
+
+    def _get_axial_neighbors(self, q, r):
+        """获取给定轴向坐标 (q,r) 的所有有效邻居六边形"""
+        neighbors = []
+        for dq, dr in self.axial_directions_clockwise: 
+            nq, nr = q + dq, r + dr
+            if (nq, nr) in self.hexagons: 
+                neighbors.append((nq, nr))
+        return neighbors
+
+    def _get_boundary_edges_of_hex_region(self, region_hex_coords_set):
+        """计算给定六边形区域集合的外部边界边。"""
+        boundary_edges = []
+        processed_edges_as_vertex_pairs = set() 
+
+        if not region_hex_coords_set: # 如果区域为空，则没有边界
+            return []
+        
+        for hq, hr in region_hex_coords_set:
+            if (hq,hr) not in self.hex_vertices: continue 
+
+            current_hex_pixel_vertices = self.hex_vertices[(hq,hr)]
+            for i in range(6):
+                v1_exact = current_hex_pixel_vertices[i]
+                v2_exact = current_hex_pixel_vertices[(i+1) % 6]
+                
+                current_edge_vertex_pair_sorted = tuple(sorted((v1_exact, v2_exact)))
+                if current_edge_vertex_pair_sorted in processed_edges_as_vertex_pairs:
+                    continue 
+
+                is_boundary = True 
+                for neighbor_qr in self._get_axial_neighbors(hq,hr):
+                    if neighbor_qr not in self.hex_vertices: continue
+                    neighbor_hex_pixel_verts = self.hex_vertices[neighbor_qr]
+                    v1_in_neighbor = any(self._are_vertices_close(v, v1_exact) for v in neighbor_hex_pixel_verts)
+                    v2_in_neighbor = any(self._are_vertices_close(v, v2_exact) for v in neighbor_hex_pixel_verts)
+                    if v1_in_neighbor and v2_in_neighbor: 
+                        if neighbor_qr in region_hex_coords_set: 
+                            is_boundary = False 
+                    break
+                
+                if is_boundary:
+                    boundary_edges.append((v1_exact[0], v1_exact[1], v2_exact[0], v2_exact[1]))
+                    processed_edges_as_vertex_pairs.add(current_edge_vertex_pair_sorted)
+        return boundary_edges
+
+    def _are_vertices_close(self, v1, v2, tol=1e-5):
+        """检查两个像素顶点是否足够接近 (用于判断是否为同一顶点)"""
+        return math.sqrt((v1[0]-v2[0])**2 + (v1[1]-v2[1])**2) < tol
+
+    def _get_corner_hexagons(self, k_level):
+        """获取 HHM(k_level) 的6个角点六边形的轴向坐标。"""
+        if k_level < 1: return {} 
+        r_eff = k_level - 1 
+        
+        # 轴向坐标定义下的角点 (q,r)
+        # E: (r_eff, 0)
+        # NE: (r_eff, -r_eff) -- s=0
+        # NW: (0, -r_eff)
+        # W: (-r_eff, 0)
+        # SW: (-r_eff, r_eff) -- s=0
+        # SE: (0, r_eff)
+        corners_theory = {
+            "E":  (r_eff, 0),
+            "NE": (r_eff, -r_eff) if r_eff > 0 else (0,0) , 
+            "NW": (0, -r_eff),
+            "W":  (-r_eff, 0),
+            "SW": (-r_eff, r_eff) if r_eff > 0 else (0,0),
+            "SE": (0, r_eff)                           
+        }
+        valid_corners = {}
+        for name, coord_qr in corners_theory.items():
+            # 对于 r_eff = 0 (即 k_level=1), 所有角点都是 (0,0)
+            actual_coord_to_check = (0,0) if r_eff == 0 else coord_qr
+
+            if actual_coord_to_check in self.hexagons:
+                valid_corners[name] = actual_coord_to_check
+            else: # 如果理论角点不在 (例如对于r_eff > 0)
+                  # 这通常表示k_level对于网格来说太大了，或者网格本身有问题
+                  # print(f"警告: 理论角点 {name}={actual_coord_to_check} (k_level={k_level}, r_eff={r_eff}) 不在 self.hexagons 中。")
+                  pass
+        return valid_corners
+
+
+    def _construct_cycle_figure6_style_spiral(self):
+        """为长度 l = 6t^2-2 的环，基于多层奇数阶螺旋和特定过渡规则进行构造。"""
+        s_prime_hexagons = set()
+        current_qr = (0, 0)  # 螺旋路径的当前末端/笔尖
+
+        if current_qr not in self.hexagons:
+            messagebox.showerror("螺旋构造错误", "中心六边形 (0,0) 不存在。")
+            return None, None
+        s_prime_hexagons.add(current_qr)
+
+        final_target_k_level = self.t if self.t % 2 != 0 else self.t - 1
+        if final_target_k_level < 1:
+            if self.t == 1: # t=1, final_target_k_level=1. s_prime={(0,0)} 是期望的.
+                pass 
+            else:
+                messagebox.showwarning("螺旋构造警告", f"最终目标层级 k_level ({final_target_k_level}) 无效 (t={self.t})。")
+                return None, None
+
+        active_k_level = 1 # 从 HHM(1) 开始处理奇数层
+        # 螺旋路径围绕的角点顺序: W, SW, SE, E, NE, NW
+        path_segment_target_labels = ["W", "SW", "SE", "E", "NE", "NW"]
+
+        while active_k_level <= final_target_k_level:
+            corners_of_active_k = self._get_corner_hexagons(active_k_level)
+            if not corners_of_active_k and active_k_level >=1:
+                messagebox.showerror("螺旋构造错误", f"未能获取 k_level={active_k_level} 的角点。")
+                return None, None
+
+            for target_label in path_segment_target_labels:
+                # 获取当前层级、当前目标标签的角点坐标
+                # HHM(1)的所有角点都是(0,0)
+                target_corner_qr = corners_of_active_k.get(target_label) 
+                if target_corner_qr is None : # 如果_get_corner_hexagons实现确保k=1时总有值，则不应发生
+                    if active_k_level == 1: target_corner_qr = (0,0) # k=1所有角点是(0,0)
+                    else:
+                        messagebox.showerror("螺旋构造错误", f"角点 {target_label} (k={active_k_level}) 未定义。")
+                        return None, None
+
+                # 从 current_qr 移动到 target_corner_qr, 路径上的六边形加入 s_prime_hexagons
+                if current_qr != target_corner_qr: # 仅当尚未到达目标时移动
+                    current_qr = self._extend_path_to_target(current_qr, target_corner_qr, s_prime_hexagons)
+                
+                # 校验是否成功到达，如果未到达可能意味着螺旋无法按预期形成
+                if current_qr != target_corner_qr:
+                    # print(f"警告: 螺旋未能从之前位置到达 {target_label} ({target_corner_qr}) of k={active_k_level}. 当前停在: {current_qr}")
+                    # 可以在此添加更强的错误处理或终止逻辑
+                    pass
+
+                # 如果当前段的目标是西北角 (NW)
+                if target_label == "NW":
+                    if active_k_level < final_target_k_level:
+                        # 层间过渡: 从当前 NW 角点向西(左)移动两格
+                        for _ in range(2):
+                            next_q_transition = current_qr[0] - 1 # 向西 q-1
+                            next_r_transition = current_qr[1]     # r 不变
+                            potential_next_qr_transition = (next_q_transition, next_r_transition)
+                            if potential_next_qr_transition in self.hexagons:
+                                current_qr = potential_next_qr_transition
+                                s_prime_hexagons.add(current_qr)
+                            else:
+                                # print(f"警告: 层间左移两格时在 {potential_next_qr_transition} 处碰到边界 (从k={active_k_level}的NW)。")
+                                break # 无法完成两格移动，终止此方向的过渡
+                        # 完成过渡（或尝试过渡后），跳出当前k_level的角点循环，准备进入下一个k_level
+                        break 
+                    else: # active_k_level == final_target_k_level
+                        # 到达最外目标螺旋层的西北角，S'主路径构造完成
+                        # 将 active_k_level 设置为大于 final_target_k_level 以终止外部while循环
+                        active_k_level = final_target_k_level + 1 
+                        break # 跳出角点循环
+            
+            if active_k_level > final_target_k_level: # 如果因为到达最终层NW而设置了此条件
+                break # 结束主螺旋构造循环
+            
+            active_k_level += 2 # 移动到下一个奇数层 (e.g., 1 -> 3 -> 5)
+
+        # --- S' 螺旋主体路径 (s_prime_hexagons) 构建完毕 --- 
+
+        # 对于偶数阶 t (t >= 2)，在 S' 基础上，从 HHM(t-1)的NW角点再向西(左)走一步并加入S'
+        if self.t % 2 == 0 and self.t >= 2:
+            # 获取 HHM(t-1) 的精确西北角点坐标
+            # final_target_k_level 此时等于 t-1
+            corners_t_minus_1 = self._get_corner_hexagons(self.t - 1) 
+            nw_hex_of_t_minus_1 = corners_t_minus_1.get("NW")
+
+            if nw_hex_of_t_minus_1:
+                # 额外的一步是从这个真实的NW角点开始的
+                base_for_extra_step = nw_hex_of_t_minus_1
+                
+                # 之前的 current_qr 理论上应该停在 nw_hex_of_t_minus_1
+                # if current_qr != base_for_extra_step:
+                    # print(f"警告 (t={self.t},偶数): S'路径末端 {current_qr} 与 HHM({self.t-1})的NW点 {base_for_extra_step} 不符。基于后者进行额外左移。")
+                    # pass
+
+                extra_step_q = base_for_extra_step[0] - 1 # 向西 q-1
+                extra_step_r = base_for_extra_step[1]     # r 不变
+                extra_step_hex = (extra_step_q, extra_step_r)
+                
+                if extra_step_hex in self.hexagons:
+                    s_prime_hexagons.add(extra_step_hex) # 将这额外一步加入 S' 集合
+                # else:
+                    # print(f"警告 (t={self.t},偶数): 额外左移一步到 {extra_step_hex} 超出边界或无效。")
+            # else:
+                 # print(f"警告 (t={self.t},偶数): 未能获取HHM({self.t-1})的NW角点以进行额外左移。")
+
+        # --- 根据 S' 集合确定最终着色区域 --- 
+        final_hex_region_to_color = set()
+        if self.t % 2 == 1: # t 为奇数, 着色 S' 本身
+            final_hex_region_to_color = s_prime_hexagons
+        else: # t 为偶数, 着色 All - S'
+            all_hex_coords_in_grid = set(self.hexagons)
+            final_hex_region_to_color = all_hex_coords_in_grid - s_prime_hexagons
+            if not final_hex_region_to_color and all_hex_coords_in_grid and s_prime_hexagons.issuperset(all_hex_coords_in_grid):
+                # print(f"警告 (t={self.t},偶数): S'集合覆盖了所有六边形，导致 All-S' 为空。")
+                pass # 可能是预期行为，例如t=2, l_max=22时 S'可能很少，All-S'很大
+        
+        if not final_hex_region_to_color and self.hexagons: 
+             # 对于t=1, l_max=4, s_prime={(0,0)}, final_hex_region={(0,0)}，这是有效的
+             is_t1_lmax4_case = (self.t == 1 and len(s_prime_hexagons)==1 and (0,0) in s_prime_hexagons)
+             if not is_t1_lmax4_case:
+                messagebox.showwarning("构造警告", f"Fig6风格构造：最终着色区域为空 (t={self.t})。检查螺旋或S'逻辑。")
+                return None, None
+
+        boundary_edges = self._get_boundary_edges_of_hex_region(final_hex_region_to_color)
+        expected_length = 6 * self.t**2 - 2
+
+        # 对t=1, 期望长度是4. 此时 s_prime={(0,0)}, final_hex_region={(0,0)}. 其边界是6条边。
+        if self.t == 1 and expected_length == 4:
+            if len(boundary_edges) == 6 and len(final_hex_region_to_color) == 1:
+                pass # t=1特殊情况，画的是(0,0)这个六边形，边界为6，符合预期
+            # else:
+                # print(f"警告 (t=1, l_exp=4): 边界边数 {len(boundary_edges)} (应为6), 着色数 {len(final_hex_region_to_color)} (应为1)")
+        elif len(boundary_edges) != expected_length:
+            # print(f"警告: Fig6风格构造的环边界边数为 {len(boundary_edges)}，论文预期为 {expected_length} (t={self.t})")
+            pass
+
+        if not self._verify_cycle_connectivity(boundary_edges) and boundary_edges:
+             # print("警告: Fig6风格构造的环边界可能不连通或顶点度数错误。")
+             pass
+
+        return boundary_edges, list(final_hex_region_to_color)
+
+    def _verify_cycle_connectivity(self, cycle_edges):
+        """验证给定的边集是否形成一个单一的连通环（所有节点度为2）"""
+        if not cycle_edges: return False 
+        adj = defaultdict(list) 
+        nodes_in_cycle = set()    
+        vertex_degrees = defaultdict(int) 
+        for edge_pixel_coords in cycle_edges:
+            v1_exact = self._find_closest_vertex((edge_pixel_coords[0], edge_pixel_coords[1]))
+            v2_exact = self._find_closest_vertex((edge_pixel_coords[2], edge_pixel_coords[3]))
+            if not v1_exact or not v2_exact: continue 
+            adj[v1_exact].append(v2_exact)
+            adj[v2_exact].append(v1_exact)
+            nodes_in_cycle.add(v1_exact)
+            nodes_in_cycle.add(v2_exact)
+            vertex_degrees[v1_exact] += 1
+            vertex_degrees[v2_exact] += 1
+        if not nodes_in_cycle: return False
+        for node_exact, degree in vertex_degrees.items():
+            if degree != 2: return False
+        start_node_exact = next(iter(nodes_in_cycle)) 
+        visited_check = {start_node_exact}
+        queue_check = deque([start_node_exact])
+        nodes_reached_count = 0
+        while queue_check:
+            current_node_exact = queue_check.popleft()
+            nodes_reached_count += 1
+            for neighbor_exact in adj[current_node_exact]:
+                if neighbor_exact not in visited_check:
+                    visited_check.add(neighbor_exact)
+                    queue_check.append(neighbor_exact)
+        if nodes_reached_count != len(nodes_in_cycle): return False
+        return True 
+
+    def _find_closest_vertex(self, coord_to_find_pixels):
+        """在 _exact_vertex_map 中查找像素坐标对应的精确顶点。"""
+        rounded_pixel_key = (round(coord_to_find_pixels[0], 6), round(coord_to_find_pixels[1], 6))
+        return self._exact_vertex_map.get(rounded_pixel_key, None)
+
+    def _extend_path_to_target(self, start_qr, target_qr, s_prime_hexagons_ref):
+        """使用BFS寻找从start_qr到target_qr的轴向路径上的六边形(不含start_qr)，
+           将它们添加到s_prime_hexagons_ref中，并返回路径的实际终点。
+        """
+        if start_qr == target_qr:
+            return start_qr
+
+        queue = deque([(start_qr, [start_qr])])  # (current_hex, path_list_to_current_hex)
+        visited_in_bfs = {start_qr}
+        
+        # 简单的路径长度限制，避免在巨大网格或无路径时无限搜索
+        # 基于轴向距离的启发式限制
+        max_bfs_path_len = (abs(start_qr[0] - target_qr[0]) + \
+                              abs(start_qr[1] - target_qr[1]) + \
+                              abs((-start_qr[0]-start_qr[1]) - (-target_qr[0]-target_qr[1]))) * 2 + 5
+        if max_bfs_path_len <= 0: max_bfs_path_len = 5 # 最小长度
+
+        found_path_to_target = []
+
+        while queue:
+            current_hex, path = queue.popleft()
+
+            if len(path) > max_bfs_path_len: # 路径过长，剪枝
+                continue
+
+            if current_hex == target_qr:
+                found_path_to_target = path
+                break # 找到目标
+
+            # 探索邻居 (使用 self.axial_directions_clockwise)
+            for dq, dr in self.axial_directions_clockwise:
+                neighbor_qr = (current_hex[0] + dq, current_hex[1] + dr)
+                if neighbor_qr in self.hexagons and neighbor_qr not in visited_in_bfs:
+                    visited_in_bfs.add(neighbor_qr)
+                    new_path = path + [neighbor_qr]
+                    queue.append((neighbor_qr, new_path))
+        
+        actual_end_qr = start_qr # 默认为起点，如果没找到路径
+        if found_path_to_target:
+            # 将路径上的六边形（除了起点）加入 s_prime_hexagons
+            for i in range(1, len(found_path_to_target)):
+                s_prime_hexagons_ref.add(found_path_to_target[i])
+            actual_end_qr = found_path_to_target[-1]
+            
+            # if actual_end_qr != target_qr:
+                # print(f"路径搜索: 从 {start_qr} 到 {target_qr}，实际到达 {actual_end_qr}")
+        # else:
+            # print(f"路径搜索: 从 {start_qr} 未能找到路径到 {target_qr}")
+            
+        return actual_end_qr
+
+    def _get_step_towards_target(self, current_qr, target_qr):
+        """计算从 current_qr 到 target_qr 的最佳单步轴向移动。返回 (dq,dr) 或 None。"""
+        if current_qr == target_qr:
+            return None
+
+        best_dir = None
+        min_axial_dist = float('inf')
+
+        current_q, current_r = current_qr
+        current_s = -current_q - current_r # s-coordinate for current
+        target_q, target_r = target_qr
+        target_s = -target_q - target_r   # s-coordinate for target
+
+        # Calculate initial axial distance from current to target
+        # initial_dist = (abs(current_q - target_q) + abs(current_r - target_r) + abs(current_s - target_s)) / 2.0
+
+        candidate_dirs = [] # To store directions that yield the same min_axial_dist
+
+        for dq, dr in self.axial_directions_clockwise: # E, SE, SW, W, NW, NE
+            next_q, next_r = current_q + dq, current_r + dr
+            # We don't check self.hexagons here; caller handles wall collisions.
+            # This function is purely about optimal direction if movement is possible.
+            
+            next_s = -next_q - next_r # s-coordinate for the potential next step
+            
+            # Calculate axial distance from the potential next step to the target
+            dist_to_target = (abs(next_q - target_q) + abs(next_r - target_r) + abs(next_s - target_s)) / 2.0
+
+            if dist_to_target < min_axial_dist:
+                min_axial_dist = dist_to_target
+                best_dir = (dq, dr)
+                candidate_dirs = [best_dir] # New best, reset candidates
+            elif dist_to_target == min_axial_dist:
+                # If it's the same minimal distance, add to candidates for potential tie-breaking
+                # This also handles the initial case where best_dir might be None
+                if best_dir is not None: # Ensure we don't add if it's the first evaluation yielding this min_dist
+                    candidate_dirs.append((dq, dr))
+                else: # First time setting this min_axial_dist
+                    best_dir = (dq, dr) # Should have been set in the < block, but for safety
+                    candidate_dirs = [(dq, dr)]
+        
+        # Tie-breaking: if multiple directions give the same minimal distance.
+        # A simple tie-breaker: prefer directions that reduce q distance if target is East/West-ish,
+        # or r distance if target is N/S-ish. Or prefer clockwise/counter-clockwise.
+        # For now, simply returning the first `best_dir` found in the loop order is deterministic.
+        # If candidate_dirs has multiple, `best_dir` is the first one that achieved min_axial_dist.
+        
+        # Ensure we actually found a direction (should happen if current_qr != target_qr)
+        if not best_dir and candidate_dirs: # If best_dir somehow not set but candidates exist
+            best_dir = candidate_dirs[0]
+
+        return best_dir
+
+    def _generate_uncoloring_traversal_path(self):
+        """
+        生成用于Case 2 (-4k) 操作的六边形遍历路径。
+        按照以下规则生成路径：
+        1. 从最外层(t)西北角点出发，初始向右移动(顺时针方向)
+        2. 遇到标记点时转向，标记点包括各层的角点(除内层NW)和特殊点
+        3. 标记点遇到顺序：NW->NE->E->SE->SW->W->SP->...->内层NE->...
+        4. 遇到特殊点后向东(右)移动直到遇到下一个标记点(通常是内层NE)
+        5. 内层的西北角点不作为标记点，因此不在内层NW处转向
+        """
+        if self.t < 1: 
+            return []
+        
+        traversal_path = []
+        visited_on_traversal = set()
+
+        # 1. 获取各层角点
+        corner_points_by_layer = {}  # 存储各层角点: layer -> {label -> (q,r)}
+        for layer in range(1, self.t + 1):
+            corners = self._get_corner_hexagons(layer)
+            if corners:
+                corner_points_by_layer[layer] = corners
+        
+        if self.t not in corner_points_by_layer:
+            if self.t == 1 and (0,0) in self.hexagons: 
+                return [(0,0)]
+            return []
+        
+        # 2. 定义特殊点 (SP)
+        special_points = set()
+        special_points_by_layer = {}  # 存储各层特殊点: layer -> (q,r)
+        
+        relevant_tiers = []
+        if self.t % 2 == 0: 
+            # t为偶数，特殊点在偶数层
+            relevant_tiers = [m for m in range(2, self.t + 1, 2)]
+        else: 
+            # t为奇数，特殊点在奇数层
+            relevant_tiers = [m for m in range(1, self.t + 1, 2)]
+            
+        for m in relevant_tiers:
+            if m < 1: continue
+            
+            # 获取该层的西北角点坐标
+            nw_corners_m = self._get_corner_hexagons(m)
+            if "NW" not in nw_corners_m:
+                continue
+                
+            nw_corner = nw_corners_m["NW"]
+            
+            # 从西北角点往左下走两格
+            # 第一步：往左下方向 (SW, -1, +1)
+            step1_q = nw_corner[0] - 1
+            step1_r = nw_corner[1] + 1
+            
+            # 第二步：继续往左下方向
+            step2_q = step1_q - 1
+            step2_r = step1_r + 1
+            
+            # 特殊点坐标
+            special_point = (step2_q, step2_r)
+            
+            # 检查特殊点是否在网格内
+            s_coord = -special_point[0] - special_point[1]
+            if max(abs(special_point[0]), abs(special_point[1]), abs(s_coord)) < self.t:
+                if special_point in self.hexagons:
+                    special_points.add(special_point)
+                    special_points_by_layer[m] = special_point
+        
+        # 3. 收集所有标记点（不包括内层NW角点）
+        all_marker_points = set()
+        for layer, corners in corner_points_by_layer.items():
+            for label, point in corners.items():
+                # 排除内层的NW角点
+                if label == "NW" and layer < self.t:
+                    continue
+                all_marker_points.add(point)
+        
+        # 将特殊点加入标记点集合
+        all_marker_points.update(special_points)
+        
+        # 4. 从最外层西北角开始遍历
+        current_layer = self.t
+        current_hex = corner_points_by_layer[self.t]["NW"]
+        traversal_path.append(current_hex)
+        visited_on_traversal.add(current_hex)
+        
+        # 角点顺序（顺时针方向）
+        corner_sequence = ["NW", "NE", "E", "SE", "SW", "W"]
+        
+        # 5. 设置初始方向为向右（朝向NE）
+        is_moving_east = False  # 是否在特殊点触发的向东移动状态
+        current_corner_idx = 0  # 当前角点在序列中的索引（0=NW）
+        next_corner_idx = 1     # 下一个目标角点在序列中的索引（1=NE）
+        
+        # 防止无限循环
+        max_iterations = self.t * 100
+        iterations = 0
+        
+        while iterations < max_iterations:
+            iterations += 1
+            
+            # 确定下一步移动
+            next_hex = None
+            
+            # 1. 如果在特殊点触发的向东移动状态
+            if is_moving_east:
+                # 向东移动
+                east_q = current_hex[0] + 1  # 向东: q+1
+                east_r = current_hex[1]      # 向东: r不变
+                east_hex = (east_q, east_r)
+                
+                if east_hex in self.hexagons:
+                    next_hex = east_hex
+                    
+                    # 如果遇到标记点，结束向东移动状态
+                    if next_hex in all_marker_points:
+                        is_moving_east = False
+                        
+                        # 找出这个标记点是哪一层的什么角点，更新当前位置信息
+                        found_corner = False
+                        for layer, corners in corner_points_by_layer.items():
+                            for label, point in corners.items():
+                                if point == next_hex:
+                                    current_layer = layer
+                                    current_corner_idx = corner_sequence.index(label)
+                                    next_corner_idx = (current_corner_idx + 1) % len(corner_sequence)
+                                    found_corner = True
+                                    break
+                            if found_corner:
+                                break
+                else:
+                    # 无法继续向东，结束向东移动状态
+                    is_moving_east = False
+                    continue
+            
+            # 2. 常规移动状态
+            else:
+                # 检查当前位置是否为特殊点
+                if current_hex in special_points and not is_moving_east:
+                    is_moving_east = True
+                    continue  # 重新开始循环，进入向东移动状态
+                
+                # 确定当前层的下一个目标角点
+                next_corner_label = corner_sequence[next_corner_idx]
+                
+                # 如果是内层的NW，则跳过（因为内层NW不是标记点）
+                if next_corner_label == "NW" and current_layer < self.t:
+                    next_corner_idx = (next_corner_idx + 1) % len(corner_sequence)
+                    next_corner_label = corner_sequence[next_corner_idx]
+                
+                # 获取目标点坐标
+                if current_layer in corner_points_by_layer and next_corner_label in corner_points_by_layer[current_layer]:
+                    target_hex = corner_points_by_layer[current_layer][next_corner_label]
+                    
+                    # 计算朝向目标的方向
+                    direction = self._get_step_towards_target(current_hex, target_hex)
+                    
+                    if direction:
+                        next_q = current_hex[0] + direction[0]
+                        next_r = current_hex[1] + direction[1]
+                        next_hex = (next_q, next_r)
+                        
+                        # 检查是否越界
+                        if next_hex not in self.hexagons:
+                            # 撞墙了，试着进入下一个角点
+                            next_corner_idx = (next_corner_idx + 1) % len(corner_sequence)
+                            continue
+                    else:
+                        # 如果当前已经到达目标
+                        if current_hex == target_hex:
+                            # 移动到下一个目标
+                            current_corner_idx = next_corner_idx
+                            next_corner_idx = (next_corner_idx + 1) % len(corner_sequence)
+                            
+                            # 检查是否需要转入内层
+                            if next_corner_idx == 0 and current_layer > 1:  # 如果下一个是NW且不在最外层
+                                # 完成一层，进入内层
+                                current_layer -= 1
+                            
+                            continue
+                        else:
+                            # 无法找到方向但未到达目标，尝试下一个目标
+                            next_corner_idx = (next_corner_idx + 1) % len(corner_sequence)
+                            continue
+                else:
+                    # 目标角点不存在，尝试下一个
+                    next_corner_idx = (next_corner_idx + 1) % len(corner_sequence)
+                    
+                    # 如果已转一圈都没找到，进入内层
+                    if next_corner_idx == 0 and current_layer > 1:
+                        current_layer -= 1
+                    
+                    continue
+            
+            # 执行移动
+            if next_hex:
+                current_hex = next_hex
+                if current_hex not in visited_on_traversal:
+                    traversal_path.append(current_hex)
+                    visited_on_traversal.add(current_hex)
+                
+                # 检查是否到达标记点
+                if current_hex in all_marker_points and not is_moving_east:
+                    # 找出这是哪一层的什么角点
+                    for layer, corners in corner_points_by_layer.items():
+                        found = False
+                        for label, point in corners.items():
+                            if point == current_hex:
+                                current_layer = layer
+                                current_corner_idx = corner_sequence.index(label)
+                                next_corner_idx = (current_corner_idx + 1) % len(corner_sequence)
+                                found = True
+                                break
+                        if found:
+                            break
+            
+            # 终止条件：到达最内层中心且走完整圈
+            if current_layer == 1 and current_hex == corner_points_by_layer.get(1, {}).get("NE", None):
+                # 最后一层只有中心点时，中心点可能没有角点定义
+                # 此时到达中心点附近即可认为完成
+                if len(corner_points_by_layer.get(1, {})) <= 1:
+                    break
+            
+            # 或者当路径足够长，超过总六边形数量时也可终止
+            if len(traversal_path) >= len(self.hexagons):
+                break
+        
+        return traversal_path
+
+    def _perform_case2_uncoloring(self, initial_colored_set, k_to_uncolor):
+        """
+        Tries to uncolor k_to_uncolor hexagons from the initial_colored_set
+        by picking them from a specially generated traversal path.
+        Modifies initial_colored_set in place.
+        Returns True if k_to_uncolor hexagons were successfully found and uncolored,
+        False otherwise.
+        """
+        if k_to_uncolor <= 0:
+            return True # No uncoloring needed or invalid k
+
+        # 使用新的路径生成方法
+        uncoloring_traversal_hexes = self._generate_uncoloring_traversal_path()
+        
+        if not uncoloring_traversal_hexes:
+            # print(f"Warning: Could not generate uncoloring traversal path for HHM(t={self.t}).")
+            return False
+
+        uncolored_successfully_count = 0
+        for hex_on_traversal in uncoloring_traversal_hexes:
+            if uncolored_successfully_count == k_to_uncolor:
+                break # Found enough hexes to uncolor
+
+            if hex_on_traversal in initial_colored_set:
+                initial_colored_set.remove(hex_on_traversal)
+                uncolored_successfully_count += 1
+        
+        return uncolored_successfully_count == k_to_uncolor
+
+# --- 可视化器类 ---
+class HexGridVisualizer(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("蜂窝网格偶环可视化 (六边形着色版)") 
+        self.geometry("900x750")
+        param_frame = tk.Frame(self)
+        param_frame.pack(pady=10)
+        tk.Label(param_frame, text="网格阶数 t:").grid(row=0, column=0, padx=5)
+        self.t_entry = tk.Entry(param_frame, width=5)
+        self.t_entry.grid(row=0, column=1, padx=5)
+        self.t_entry.insert(0, "3") 
+        tk.Label(param_frame, text="环长度 l:").grid(row=0, column=2, padx=5)
+        self.l_entry = tk.Entry(param_frame, width=5)
+        self.l_entry.grid(row=0, column=3, padx=5)
+        self.l_entry.insert(0, "52") 
+        self.find_button = tk.Button(param_frame, text="生成网格并查找环", command=self.generate_and_find)
+        self.find_button.grid(row=0, column=4, padx=10)
+        
+        # 添加显示遍历路径的按钮
+        self.show_path_button = tk.Button(param_frame, text="显示去色路径", command=self.show_uncoloring_path)
+        self.show_path_button.grid(row=0, column=5, padx=10)
+        
+        self.canvas = tk.Canvas(self, bg="white")
+        self.canvas.pack(fill=tk.BOTH, expand=True)
+        self.scale = 1.0
+        self.canvas_offset_x = 450 
+        self.canvas_offset_y = 375 
+        self.canvas.bind("<ButtonPress-1>", self.start_pan)
+        self.canvas.bind("<B1-Motion>", self.pan)
+        self.canvas.bind("<MouseWheel>", self.zoom)
+        self.canvas.bind("<Button-4>", lambda e: self.zoom(e, 1.1)) 
+        self.canvas.bind("<Button-5>", lambda e: self.zoom(e, 0.9)) 
+        self.grid_instance = None
+        self.current_cycle_edges = None
+        self.current_hexagons_to_color = None
+        self.traversal_path = None  # 存储遍历路径
+        self.showing_path = False   # 是否显示路径
+
+    def start_pan(self, event): # 画布拖动起始
+        self.canvas.scan_mark(event.x, event.y)
+
+    def pan(self, event): # 画布拖动过程
+        self.canvas.scan_dragto(event.x, event.y, gain=1)
+
+    def zoom(self, event, factor=None): # 画布缩放
+        true_canvas_x = self.canvas.canvasx(event.x) 
+        true_canvas_y = self.canvas.canvasy(event.y)
+        if factor is None: factor = 1.1 if event.delta > 0 else 0.9
+        self.canvas_offset_x = true_canvas_x - (true_canvas_x - self.canvas_offset_x) * factor
+        self.canvas_offset_y = true_canvas_y - (true_canvas_y - self.canvas_offset_y) * factor
+        self.scale *= factor 
+        self.redraw_canvas() 
+
+    def _get_transformed_pixel_coords(self, model_x, model_y):
+        """将模型像素坐标转换为应用了平移和缩放的画布坐标"""
+        screen_x = model_x * self.scale + self.canvas_offset_x
+        screen_y = model_y * self.scale + self.canvas_offset_y
+        return screen_x, screen_y
+
+    def generate_and_find(self): # "生成网格并查找环"按钮的回调
+        try:
+            t = int(self.t_entry.get())
+            l = int(self.l_entry.get())
+        except ValueError:
+            messagebox.showerror("输入错误", "请输入有效的整数 t 和 l")
+            return
+        if t < 1: 
+             messagebox.showerror("输入错误", "阶数 t 必须 >= 1")
+             return
+        self.grid_instance = HexGrid(t)
+        self.current_cycle_edges, self.current_hexagons_to_color = self.grid_instance.find_cycle(l)
+        
+        if self.current_cycle_edges is None and self.current_hexagons_to_color is None:
+            # find_cycle 返回 (None, None) 表示构造失败或不支持
+            # messagebox.showinfo("结果", f"未能为长度 {l} 找到或构造有效的环或六边形区域。")
+            pass # 保持界面安静，控制台会有输出
+        
+        # 生成遍历路径但不显示
+        self.traversal_path = self.grid_instance._generate_uncoloring_traversal_path()
+        self.showing_path = False
+        
+        self.redraw_canvas()
+    
+    def show_uncoloring_path(self):
+        """显示或隐藏去色遍历路径"""
+        if not self.grid_instance:
+            messagebox.showinfo("提示", "请先生成网格")
+            return
+            
+        # 切换显示状态
+        self.showing_path = not self.showing_path
+        
+        # 如果需要显示但路径未生成，则生成路径
+        if self.showing_path and not self.traversal_path:
+            self.traversal_path = self.grid_instance._generate_uncoloring_traversal_path()
+            
+        # 更新显示
+        self.redraw_canvas()
+        
+        # 更新按钮文本
+        self.show_path_button.config(text="隐藏去色路径" if self.showing_path else "显示去色路径")
+
+    def redraw_canvas(self): # 重绘整个画布
+        self.canvas.delete("all")
+        if not self.grid_instance: return
+            
+        for q, r in self.grid_instance.hexagons:
+            if (q,r) in self.grid_instance.hex_vertices:
+                model_vertices = self.grid_instance.hex_vertices[(q,r)]
+                pixel_points = []
+                for mvx, mvy in model_vertices:
+                    pvx, pvy = self._get_transformed_pixel_coords(mvx, mvy)
+                    pixel_points.extend([pvx, pvy])
+                self.canvas.create_polygon(pixel_points, fill="", outline="lightgrey", tags="grid_hex_outline")
+
+        if self.current_hexagons_to_color:
+            for q_hex, r_hex in self.current_hexagons_to_color:
+                if (q_hex, r_hex) in self.grid_instance.hex_vertices: 
+                    model_vertices = self.grid_instance.hex_vertices[(q_hex, r_hex)]
+                    pixel_points = []
+                    for mvx, mvy in model_vertices:
+                        pvx, pvy = self._get_transformed_pixel_coords(mvx, mvy)
+                        pixel_points.extend([pvx, pvy])
+                    self.canvas.create_polygon(pixel_points, fill="salmon", outline="black", width=max(0.5, 1*self.scale), tags="colored_hex_in_cycle")
+        
+        if self.current_cycle_edges:
+            for edge_model_coords in self.current_cycle_edges:
+                mx1, my1, mx2, my2 = edge_model_coords
+                sx1, sy1 = self._get_transformed_pixel_coords(mx1, my1)
+                sx2, sy2 = self._get_transformed_pixel_coords(mx2, my2)
+                self.canvas.create_line(sx1, sy1, sx2, sy2, fill="red", width=max(1, 2 * self.scale), tags="cycle_boundary_edge")
+
+        # 显示遍历路径
+        if self.showing_path and self.traversal_path:
+            # 收集所有标记点（角点和特殊点）
+            all_marker_points = set()
+            special_points = set()
+            
+            # 收集特殊点
+            relevant_tiers = []
+            if self.grid_instance.t % 2 == 0: 
+                relevant_tiers = [m for m in range(2, self.grid_instance.t + 1, 2)]
+            else: 
+                relevant_tiers = [m for m in range(1, self.grid_instance.t + 1, 2)]
+
+            for m in relevant_tiers:
+                if m < 1: continue
+                
+                # 获取该层的西北角点坐标
+                nw_corners_m = self.grid_instance._get_corner_hexagons(m)
+                if "NW" not in nw_corners_m:
+                    continue
+                    
+                nw_corner = nw_corners_m["NW"]
+                
+                # 从西北角点往左下走两格
+                # 第一步：往左下方向 (SW, -1, +1)
+                step1_q = nw_corner[0] - 1
+                step1_r = nw_corner[1] + 1
+                
+                # 第二步：继续往左下方向
+                step2_q = step1_q - 1
+                step2_r = step1_r + 1
+                
+                # 特殊点坐标
+                special_point = (step2_q, step2_r)
+                
+                # 检查特殊点是否在网格内
+                s_coord = -special_point[0] - special_point[1]
+                if max(abs(special_point[0]), abs(special_point[1]), abs(s_coord)) < self.grid_instance.t:
+                    if special_point in self.grid_instance.hexagons:
+                        special_points.add(special_point)
+            
+            # 收集所有层的角点，并区分内层NW点和有效标记点
+            corner_labels = ["NW", "NE", "E", "SE", "SW", "W"]
+            marker_corner_points = set()  # 作为标记点的角点
+            non_marker_nw_points = set()  # 内层NW角点(不作为标记点)
+            
+            for layer in range(1, self.grid_instance.t + 1):
+                layer_corners = self.grid_instance._get_corner_hexagons(layer)
+                if not layer_corners:
+                    continue
+                    
+                for label in corner_labels:
+                    if label in layer_corners:
+                        corner_point = layer_corners[label]
+                        if label == "NW" and layer < self.grid_instance.t:
+                            non_marker_nw_points.add(corner_point)  # 内层NW不作为标记点
+                        else:
+                            marker_corner_points.add(corner_point)  # 其他角点都是标记点
+            
+            # 合并有效标记点
+            all_marker_points.update(marker_corner_points)
+            all_marker_points.update(special_points)
+            
+            # 绘制路径连线
+            for i in range(len(self.traversal_path) - 1):
+                start_hex = self.traversal_path[i]
+                end_hex = self.traversal_path[i + 1]
+                
+                if start_hex in self.grid_instance.hex_centers and end_hex in self.grid_instance.hex_centers:
+                    start_x, start_y = self.grid_instance.hex_centers[start_hex]
+                    end_x, end_y = self.grid_instance.hex_centers[end_hex]
+                    
+                    sx1, sy1 = self._get_transformed_pixel_coords(start_x, start_y)
+                    sx2, sy2 = self._get_transformed_pixel_coords(end_x, end_y)
+                    
+                    # 使用渐变色显示路径方向
+                    r = min(255, 50 + (i * 200 // len(self.traversal_path)))
+                    g = min(255, 50 + ((len(self.traversal_path) - i) * 200 // len(self.traversal_path)))
+                    color = f'#{r:02x}{g:02x}00'
+                    
+                    self.canvas.create_line(sx1, sy1, sx2, sy2, fill=color, width=max(1.5, 2.5 * self.scale), 
+                                          arrow=tk.LAST, dash=(5,2), tags="traversal_path")
+            
+            # 在路径上的六边形中心标记数字（表示顺序）
+            for i, hex_qr in enumerate(self.traversal_path):
+                if hex_qr in self.grid_instance.hex_centers:
+                    cx, cy = self.grid_instance.hex_centers[hex_qr]
+                    sx, sy = self._get_transformed_pixel_coords(cx, cy)
+                    # 只标记一些关键点，避免过于拥挤
+                    if i % max(1, len(self.traversal_path) // 20) == 0:
+                        self.canvas.create_text(sx, sy, text=str(i), fill="black", font=("Arial", int(9*self.scale)), tags="traversal_index")
+            
+            # 标记特殊点
+            for sp in special_points:
+                if sp in self.grid_instance.hex_centers:
+                    cx, cy = self.grid_instance.hex_centers[sp]
+                    sx, sy = self._get_transformed_pixel_coords(cx, cy)
+                    self.canvas.create_oval(sx-10*self.scale, sy-10*self.scale, 
+                                          sx+10*self.scale, sy+10*self.scale, 
+                                          outline="purple", width=max(1.5, 2*self.scale), tags="special_point")
+                    self.canvas.create_text(sx, sy, text="SP", fill="purple", font=("Arial", int(9*self.scale)), tags="special_point_text")
+            
+            # 标记有效角点（作为标记点的角点）
+            for cp in marker_corner_points:
+                if cp in self.grid_instance.hex_centers:
+                    cx, cy = self.grid_instance.hex_centers[cp]
+                    sx, sy = self._get_transformed_pixel_coords(cx, cy)
+                    self.canvas.create_oval(sx-8*self.scale, sy-8*self.scale, 
+                                          sx+8*self.scale, sy+8*self.scale, 
+                                          outline="blue", width=max(1, 1.5*self.scale), tags="corner_point")
+            
+            # 标记内层NW角点（不作为标记点）
+            for nw in non_marker_nw_points:
+                if nw in self.grid_instance.hex_centers:
+                    cx, cy = self.grid_instance.hex_centers[nw]
+                    sx, sy = self._get_transformed_pixel_coords(cx, cy)
+                    self.canvas.create_oval(sx-8*self.scale, sy-8*self.scale, 
+                                          sx+8*self.scale, sy+8*self.scale, 
+                                          outline="gray", width=max(1, 1.5*self.scale), dash=(3,2), tags="non_marker_corner")
+
+        if (0,0) in self.grid_instance.hex_centers:
+             model_center_x, model_center_y = self.grid_instance.hex_centers[(0,0)]
+             scx, scy = self._get_transformed_pixel_coords(model_center_x, model_center_y)
+             radius = max(1, 3 * self.scale) 
+             self.canvas.create_oval(scx-radius, scy-radius, scx+radius, scy+radius, fill='blue', outline='blue', tags='center_marker')
+
+if __name__ == "__main__":
+    app = HexGridVisualizer()
+    app.mainloop()    
