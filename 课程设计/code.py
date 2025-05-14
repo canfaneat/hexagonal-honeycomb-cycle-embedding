@@ -114,6 +114,9 @@ class HexGrid:
         if length == 10 and self.t >= 2:
             return self._construct_10_cycle_with_hex_coloring()
         
+        if length == 12 and self.t >= 2:
+            return self._construct_12_cycle_with_triangle()
+        
         max_theoretical_len = 6 * self.t**2 - 2
         second_max_len = 6 * self.t**2 - 4
         
@@ -182,9 +185,8 @@ class HexGrid:
 
                 initial_colored_set = set(base_hex_list_fig9)
                 
-                # Step 2: Perform the uncoloring operation
-                # 使用与case2相同的去色算法
-                uncoloring_successful = self._perform_case2_uncoloring(initial_colored_set, k_to_uncolor)
+                # Step 2: 使用专门为Case 4设计的去色操作
+                uncoloring_successful = self._perform_case4_uncoloring(initial_colored_set, k_to_uncolor)
 
                 if uncoloring_successful:
                     final_hex_coords_to_color_list = list(initial_colored_set)
@@ -200,7 +202,7 @@ class HexGrid:
                     messagebox.showinfo("提示", f"无法为长度 {length} 执行Case4的-4k操作。可能在边界上未能找到足够的 {k_to_uncolor} 个可移除的已着色六边形，或者k值过大。")
                     return None, None
         
-        messagebox.showinfo("提示", f"长度为 {length} 的环的构造方法 (除了6, 10, 6t^2-2, 6t^2-2-4k, 6t^2-4 和 6t^2-4-4k) 当前未被实现。")
+        messagebox.showinfo("提示", f"长度为 {length} 的环的构造方法 (除了6, 10, 12, 6t^2-2, 6t^2-2-4k, 6t^2-4 和 6t^2-4-4k) 当前未被实现。")
         return None, None
 
     def _get_hexagon_cycle_for_coloring(self, hex_coord_qr):
@@ -226,45 +228,13 @@ class HexGrid:
 
 
     def _construct_10_cycle_with_hex_coloring(self):
-        """构造长度为10的环，并返回其边界边和参与的两个六边形"""
-        hex1_qr = (0, 0)
-        hex2_qr = None
-        for direction in self.axial_directions_clockwise:
-            potential_neighbor_qr = (hex1_qr[0] + direction[0], hex1_qr[1] + direction[1])
-            if potential_neighbor_qr in self.hexagons:
-                hex2_qr = potential_neighbor_qr
-                break
-
-        if hex2_qr is None:
-            if self.t > 1 and self.hexagons:
-                # 尝试从网格中任意一个六边形开始寻找邻居对
-                 found_pair = False
-                 for h1_alt in self.hexagons:
-                     for direction_alt in self.axial_directions_clockwise:
-                         h2_alt = (h1_alt[0] + direction_alt[0], h1_alt[1] + direction_alt[1])
-                         if h2_alt in self.hexagons:
-                             hex1_qr = h1_alt
-                             hex2_qr = h2_alt
-                             found_pair = True
-                             break # 从内层 direction_alt 循环中断
-                     if found_pair:
-                         break # 从外层 h1_alt 循环中断
-            if hex2_qr is None :
-                messagebox.showerror("构造错误", "无法找到两个相邻的六边形来构造10环 (可能t过小或网格结构问题)。")
-                return None, None
-
-        hex_region_to_color = {hex1_qr, hex2_qr}
+        """构造长度为10的环：中心六边形(0,0)和左侧六边形(-1,0)"""
+        center_hex = (0, 0)
+        left_hex = (-1, 0)
+        
+        hex_region_to_color = {center_hex, left_hex}
         boundary_edges = self._get_boundary_edges_of_hex_region(hex_region_to_color)
         
-        expected_length = 10
-        if len(boundary_edges) != expected_length:
-             # print(f"警告: 构造的 l=10 环的边界边数量为 {len(boundary_edges)}，预期为 {expected_length}")
-             pass
-             
-        if not self._verify_cycle_connectivity(boundary_edges) and boundary_edges:
-             # print("错误: 构造的 l=10 环的边界不连通或度数错误")
-             pass 
-             
         return boundary_edges, list(hex_region_to_color)
 
     def _get_axial_neighbors(self, q, r):
@@ -640,6 +610,7 @@ class HexGrid:
         1. 从最外层(t)西北角点出发
         2. 遇到标记点时转向，标记点包括各层的角点(除内层NW)和特殊点
         3. 移动方向顺序为: 东->东南->西南->西->西北->东北
+        4. 当t为奇数时，在第三层西南角点停止
         """
         if self.t < 1: 
             return []
@@ -735,8 +706,17 @@ class HexGrid:
         max_iterations = self.t * 100
         iterations = 0
         
+        # 获取第三层西南角点（对于奇数t需要特殊处理）
+        l3_sw_point = None
+        if self.t % 2 == 1 and 3 in corner_points_by_layer and "SW" in corner_points_by_layer[3]:
+            l3_sw_point = corner_points_by_layer[3]["SW"]
+        
         while iterations < max_iterations and len(traversal_path) < len(self.hexagons):
             iterations += 1
+            
+            # 对于奇数t，检查是否到达第三层西南角点，如果是则停止
+            if self.t % 2 == 1 and l3_sw_point and current_hex == l3_sw_point:
+                break
             
             # 1. 检查当前位置是否为标记点，如果是则更新方向索引
             if current_hex in all_marker_points:
@@ -1050,6 +1030,374 @@ class HexGrid:
         
         return boundary_edges, list(final_hex_region_to_color)
 
+    def _construct_12_cycle_with_triangle(self):
+        """
+        构造长度为12的环：中心六边形(0,0)、左侧六边形(-1,0)和左下六边形(-1,1)
+        形成三角状排列的三个六边形
+        """
+        center_hex = (0, 0)      # 中心
+        left_hex = (-1, 0)       # 左侧六边形(从中心往左走一步)
+        bottom_hex = (-1, 1)     # 左下六边形(从左侧六边形往右下走一步)
+        
+        hex_region_to_color = {center_hex, left_hex, bottom_hex}
+        boundary_edges = self._get_boundary_edges_of_hex_region(hex_region_to_color)
+        
+        return boundary_edges, list(hex_region_to_color)
+
+    def _generate_case4_uncoloring_traversal_path(self):
+        """
+        生成用于Case 4 (-4k) 操作的六边形遍历路径。
+        
+        奇数t情况:
+        1. 参照已实现的Case 2逻辑，在到达第三层西南角点时停止
+        
+        偶数t情况:
+        1. 从最外层西北角开始
+        2. 当到达最外层特殊点(SP)时跳转至第二层西南角点
+        3. 从第二层西南角点开始按逆时针路径行进
+        4. 当在逆时针模式下遇到第四层特殊点(SP)时，方向设置为西南(4)
+        """
+        if self.t < 1: 
+            return []
+        
+        traversal_path = []
+        visited_on_traversal = set()
+
+        # 获取各层角点
+        corner_points_by_layer = {}  # 存储各层角点: layer -> {label -> (q,r)}
+        for layer in range(1, self.t + 1):
+            corners = self._get_corner_hexagons(layer)
+            if corners:
+                corner_points_by_layer[layer] = corners
+        
+        # 检查最外层西北角点是否存在
+        if self.t not in corner_points_by_layer or "NW" not in corner_points_by_layer[self.t]:
+            if self.t == 1 and (0,0) in self.hexagons: 
+                return [(0,0)]
+            return []  # 没有有效起点
+        
+        # 获取特殊点
+        special_points = set()
+        special_points_by_layer = {}  # 存储各层特殊点: layer -> (q,r)
+        
+        relevant_tiers = []
+        if self.t % 2 == 0: 
+            # t为偶数，特殊点在偶数层
+            relevant_tiers = [m for m in range(2, self.t + 1, 2)]
+        else: 
+            # t为奇数，特殊点在奇数层
+            relevant_tiers = [m for m in range(1, self.t + 1, 2)]
+            
+        for m in relevant_tiers:
+            if m < 1: continue
+            
+            # 获取该层的西北角点坐标
+            nw_corners_m = self._get_corner_hexagons(m)
+            if "NW" not in nw_corners_m:
+                continue
+                
+            nw_corner = nw_corners_m["NW"]
+            
+            # 从西北角点往左下走两格获取特殊点
+            step1_q = nw_corner[0] - 1
+            step1_r = nw_corner[1] + 1
+            step2_q = step1_q - 1
+            step2_r = step1_r + 1
+            special_point = (step2_q, step2_r)
+            
+            # 检查特殊点是否在网格内
+            s_coord = -special_point[0] - special_point[1]
+            if max(abs(special_point[0]), abs(special_point[1]), abs(s_coord)) < self.t:
+                if special_point in self.hexagons:
+                    special_points.add(special_point)
+                    special_points_by_layer[m] = special_point
+
+        # 奇数t和偶数t处理方式不同
+        if self.t % 2 == 1:  # === 奇数t情况 ===
+            # 严格参照Case 2的逻辑实现，但在到达第三层西南角点时停止
+            all_marker_points = set()
+            for layer, corners in corner_points_by_layer.items():
+                for label, point in corners.items():
+                    # 排除内层的NW角点
+                    if label == "NW" and layer < self.t:
+                        continue
+                    all_marker_points.add(point)
+            
+            # 将特殊点加入标记点集合
+            all_marker_points.update(special_points)
+            
+            # 从最外层西北角开始遍历
+            current_hex = corner_points_by_layer[self.t]["NW"]
+            traversal_path.append(current_hex)
+            visited_on_traversal.add(current_hex)
+            
+            # 移动方向列表（东，东南，西南，西，西北，东北）
+            direction_vectors = [
+                (1, 0),    # 东
+                (0, 1),    # 东南 (q不变，r+1)
+                (-1, 1),   # 西南 (q-1, r+1)
+                (-1, 0),   # 西
+                (0, -1),   # 西北 (q不变, r-1)
+                (1, -1)    # 东北 (q+1, r-1)
+            ]
+            
+            # 初始方向索引：先从最后一个元素（东北）开始，使得首次检测标记点时转向为东
+            current_direction_index = 5  # 东北
+            
+            # 防止无限循环
+            max_iterations = self.t * 100
+            iterations = 0
+            
+            # 获取第三层西南角点
+            l3_sw_point = None
+            if 3 in corner_points_by_layer and "SW" in corner_points_by_layer[3]:
+                l3_sw_point = corner_points_by_layer[3]["SW"]
+            
+            while iterations < max_iterations and len(traversal_path) < len(self.hexagons):
+                iterations += 1
+                
+                # 关键点：检查是否到达第三层西南角点，如果是则停止
+                if l3_sw_point and current_hex == l3_sw_point:
+                    break  # 在第三层西南角点处终止路径
+                
+                # 检查当前位置是否为标记点，如果是则更新方向索引
+                if current_hex in all_marker_points:
+                    current_direction_index = (current_direction_index + 1) % 6
+                
+                # 根据当前方向移动
+                next_direction = direction_vectors[current_direction_index]
+                next_q = current_hex[0] + next_direction[0]
+                next_r = current_hex[1] + next_direction[1]
+                next_hex = (next_q, next_r)
+                
+                # 检查下一步是否在网格内，如果不在则尝试转向
+                if next_hex not in self.hexagons:
+                    # 如果撞墙，尝试转向
+                    for i in range(5):  # 尝试最多5次其他方向
+                        current_direction_index = (current_direction_index + 1) % 6
+                        next_direction = direction_vectors[current_direction_index]
+                        next_q = current_hex[0] + next_direction[0]
+                        next_r = current_hex[1] + next_direction[1]
+                        next_hex = (next_q, next_r)
+                        if next_hex in self.hexagons:
+                            break
+                
+                # 如果找到有效的下一步，则移动
+                if next_hex in self.hexagons:
+                    current_hex = next_hex
+                    if current_hex not in visited_on_traversal:
+                        traversal_path.append(current_hex)
+                        visited_on_traversal.add(current_hex)
+                else:
+                    # 如果所有方向都撞墙，可能陷入死胡同，终止遍历
+                    break
+                
+        else:  # === 偶数t情况 ===
+            # 初始化路径
+            current_hex = corner_points_by_layer[self.t]["NW"]
+            traversal_path.append(current_hex)
+            visited_on_traversal.add(current_hex)
+            
+            # 顺时针和逆时针方向向量
+            clockwise_directions = [
+                (1, 0),    # 东 (0)
+                (0, 1),    # 东南 (1)
+                (-1, 1),   # 西南 (2)
+                (-1, 0),   # 西 (3)
+                (0, -1),   # 西北 (4)
+                (1, -1)    # 东北 (5)
+            ]
+            
+            counterclockwise_directions = [
+                (1, 0),    # 东 (0)
+                (1, -1),   # 东北 (1)
+                (0, -1),   # 西北 (2)
+                (-1, 0),   # 西 (3)
+                (-1, 1),   # 西南 (4)
+                (0, 1)     # 东南 (5)
+            ]
+            
+            # 默认以顺时针方式从东北方向开始
+            current_dir_index = 5  # 东北方向（顺时针顺序）
+            using_counterclockwise = False  # 初始使用顺时针方向
+            directions = clockwise_directions
+            
+            # 找到需要特殊处理的点
+            outer_special_point = special_points_by_layer.get(self.t)  # 最外层特殊点
+            l2_sw_point = corner_points_by_layer.get(2, {}).get("SW")  # 第二层西南角点
+            fourth_layer_sp = special_points_by_layer.get(4)  # 第四层特殊点
+            
+            # 收集所有标记点（除了内层西北角点）
+            all_marker_points = set()
+            nw_corner_points = set()  # 存储各层的西北角点
+            
+            for layer, corners in corner_points_by_layer.items():
+                for label, point in corners.items():
+                    if label == "NW":
+                        nw_corner_points.add(point)
+                        if layer < self.t:  # 除最外层外的西北角点不作为标记点
+                            continue
+                    all_marker_points.add(point)
+            
+            # 最外层特殊点不加入标记点集合，因为它有特殊处理
+            if outer_special_point:
+                all_marker_points.discard(outer_special_point)
+            
+            # 其他特殊点正常加入标记点集合
+            for sp in special_points:
+                if sp != outer_special_point:
+                    all_marker_points.add(sp)
+            
+            # 开始主要的遍历循环
+            max_iterations = self.t * 200
+            iterations = 0
+            found_outer_special_point = False
+            
+            while iterations < max_iterations and len(traversal_path) < len(self.hexagons):
+                iterations += 1
+                
+                # 检查是否遇到最外层特殊点(SP)
+                if not found_outer_special_point and outer_special_point and current_hex == outer_special_point:
+                    found_outer_special_point = True
+                    
+                    # 特殊处理：直接跳转到第二层西南角点
+                    if l2_sw_point:
+                        current_hex = l2_sw_point
+                        if current_hex not in visited_on_traversal:
+                            traversal_path.append(current_hex)
+                            visited_on_traversal.add(current_hex)
+                        
+                        # 从这里开始使用逆时针方向
+                        using_counterclockwise = True
+                        directions = counterclockwise_directions
+                        
+                        # 第一步：往东走一步(q+1, r不变)
+                        e_step = (current_hex[0] + 1, current_hex[1])
+                        if e_step in self.hexagons:
+                            if e_step not in visited_on_traversal:
+                                traversal_path.append(e_step)
+                                visited_on_traversal.add(e_step)
+                            current_hex = e_step
+                        
+                        # 设置方向为东(0)
+                        current_dir_index = 0
+                        continue
+                
+                # 关键点：逆时针模式下遇到第四层特殊点(SP)时，需设置方向为西南(4)
+                if using_counterclockwise and fourth_layer_sp and current_hex == fourth_layer_sp:
+                    current_dir_index = 4  # 在逆时针顺序中，西南方向是索引4
+                    # 继续移动，不需要break
+                
+                # 检查当前位置是否为标记点（角点或特殊点）
+                elif current_hex in all_marker_points:
+                    # 更新方向索引
+                    current_dir_index = (current_dir_index + 1) % 6
+                
+                # 根据当前方向移动
+                next_dir = directions[current_dir_index]
+                next_hex = (current_hex[0] + next_dir[0], current_hex[1] + next_dir[1])
+                
+                # 检查下一步是否在网格内，如果不在则尝试转向
+                if next_hex not in self.hexagons or next_hex in visited_on_traversal:
+                    # 如果撞墙或已访问过，尝试转向
+                    direction_tried = 1
+                    found_valid_move = False
+                    
+                    while direction_tried <= 6:
+                        current_dir_index = (current_dir_index + 1) % 6
+                        next_dir = directions[current_dir_index]
+                        next_hex = (current_hex[0] + next_dir[0], current_hex[1] + next_dir[1])
+                        
+                        if next_hex in self.hexagons and next_hex not in visited_on_traversal:
+                            found_valid_move = True
+                            break
+                        
+                        direction_tried += 1
+                    
+                    if not found_valid_move:
+                        # 如果所有方向都不可行，可能陷入死胡同，终止遍历
+                        break
+                
+                # 执行移动
+                current_hex = next_hex
+                traversal_path.append(current_hex)
+                visited_on_traversal.add(current_hex)
+    
+        return traversal_path
+
+    def _perform_case4_uncoloring(self, initial_colored_set, k_to_uncolor):
+        """
+        专用于Case 4的去色操作，使用专门的路径生成方法。
+        确保严格按照生成的去色路径执行去色，对于偶数t确保最外层特殊点不被去色。
+        """
+        if k_to_uncolor <= 0:
+            return True  # 无需去色
+        
+        # 使用Case 4专用的去色路径
+        uncoloring_traversal_hexes = self._generate_case4_uncoloring_traversal_path()
+        
+        if not uncoloring_traversal_hexes:
+            return False
+        
+        # 确保最外层特殊点不被去色（对于偶数t）
+        outer_special_point = None
+        if self.t % 2 == 0 and self.t in self._get_special_points_by_layer():
+            outer_special_point = self._get_special_points_by_layer()[self.t]
+        
+        # 从路径中移除k_to_uncolor个已着色的六边形，但不包括最外层特殊点
+        uncolored_count = 0
+        for hex_qr in uncoloring_traversal_hexes:
+            if uncolored_count >= k_to_uncolor:
+                break  # 已找到足够的六边形
+            
+            if hex_qr in initial_colored_set:
+                # 跳过最外层特殊点
+                if outer_special_point and hex_qr == outer_special_point:
+                    continue
+                
+                initial_colored_set.remove(hex_qr)
+                uncolored_count += 1
+        
+        # 未找到足够的六边形去色，则操作失败
+        return uncolored_count == k_to_uncolor
+    
+    def _get_special_points_by_layer(self):
+        """获取各层的特殊点：layer -> (q,r)"""
+        special_points_by_layer = {}
+        
+        relevant_tiers = []
+        if self.t % 2 == 0: 
+            # t为偶数，特殊点在偶数层
+            relevant_tiers = [m for m in range(2, self.t + 1, 2)]
+        else: 
+            # t为奇数，特殊点在奇数层
+            relevant_tiers = [m for m in range(1, self.t + 1, 2)]
+            
+        for m in relevant_tiers:
+            if m < 1: continue
+            
+            # 获取该层的西北角点坐标
+            nw_corners_m = self._get_corner_hexagons(m)
+            if "NW" not in nw_corners_m:
+                continue
+                
+            nw_corner = nw_corners_m["NW"]
+            
+            # 从西北角点往左下走两格
+            step1_q = nw_corner[0] - 1
+            step1_r = nw_corner[1] + 1
+            step2_q = step1_q - 1
+            step2_r = step1_r + 1
+            special_point = (step2_q, step2_r)
+            
+            # 检查特殊点是否在网格内
+            s_coord = -special_point[0] - special_point[1]
+            if max(abs(special_point[0]), abs(special_point[1]), abs(s_coord)) < self.t:
+                if special_point in self.hexagons:
+                    special_points_by_layer[m] = special_point
+        
+        return special_points_by_layer
+
 # --- 可视化器类 ---
 class HexGridVisualizer(tk.Tk):
     def __init__(self):
@@ -1145,7 +1493,25 @@ class HexGridVisualizer(tk.Tk):
         
         # 如果需要显示但路径未生成，则生成路径
         if self.showing_path and not self.traversal_path:
-            self.traversal_path = self.grid_instance._generate_uncoloring_traversal_path()
+            # 获取当前环的长度
+            try:
+                current_length = int(self.l_entry.get())
+                max_theoretical_len = 6 * self.grid_instance.t**2 - 2
+                second_max_len = 6 * self.grid_instance.t**2 - 4
+                
+                # 根据当前环的长度决定使用哪种路径生成方法
+                if current_length < max_theoretical_len and (max_theoretical_len - current_length) % 4 == 0:
+                    # Case 2
+                    self.traversal_path = self.grid_instance._generate_uncoloring_traversal_path()
+                elif current_length < second_max_len and (second_max_len - current_length) % 4 == 0:
+                    # Case 4
+                    self.traversal_path = self.grid_instance._generate_case4_uncoloring_traversal_path()
+                else:
+                    # 默认使用case2的路径生成
+                    self.traversal_path = self.grid_instance._generate_uncoloring_traversal_path()
+            except (ValueError, TypeError):
+                # 出错时使用默认路径生成方法
+                self.traversal_path = self.grid_instance._generate_uncoloring_traversal_path()
             
         # 更新显示
         self.redraw_canvas()
