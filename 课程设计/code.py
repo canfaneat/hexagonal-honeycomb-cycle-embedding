@@ -603,11 +603,9 @@ class HexGrid:
         """
         生成用于Case 2 (-4k) 操作的六边形遍历路径。
         按照以下规则生成路径：
-        1. 从最外层(t)西北角点出发，初始向右移动(顺时针方向)
+        1. 从最外层(t)西北角点出发
         2. 遇到标记点时转向，标记点包括各层的角点(除内层NW)和特殊点
-        3. 标记点遇到顺序：NW->NE->E->SE->SW->W->SP->...->内层NE->...
-        4. 遇到特殊点后向东(右)移动直到遇到下一个标记点(通常是内层NE)
-        5. 内层的西北角点不作为标记点，因此不在内层NW处转向
+        3. 移动方向顺序为: 东->东南->西南->西->西北->东北
         """
         if self.t < 1: 
             return []
@@ -686,185 +684,71 @@ class HexGrid:
         traversal_path.append(current_hex)
         visited_on_traversal.add(current_hex)
         
-        # 角点顺序（顺时针方向）
-        corner_sequence = ["NW", "NE", "E", "SE", "SW", "W"]
+        # 移动方向列表（东，东南，西南，西，西北，东北）
+        direction_vectors = [
+            (1, 0),    # 东
+            (0, 1),    # 东南 (q不变，r+1)
+            (-1, 1),   # 西南 (q-1, r+1)
+            (-1, 0),   # 西
+            (0, -1),   # 西北 (q不变, r-1)
+            (1, -1)    # 东北 (q+1, r-1)
+        ]
         
-        # 5. 设置初始方向为向右（朝向NE）
-        is_moving_east = False  # 是否在特殊点触发的向东移动状态
-        is_after_w_point = False  # 是否刚经过W角点，需要检查是否为特殊点的前一个点
-        current_corner_idx = 0  # 当前角点在序列中的索引（0=NW）
-        next_corner_idx = 1     # 下一个目标角点在序列中的索引（1=NE）
+        # 初始方向索引：先从最后一个元素（东北）开始，使得首次检测标记点时转向为东
+        current_direction_index = 5  # 东北
         
         # 防止无限循环
         max_iterations = self.t * 100
         iterations = 0
         
-        while iterations < max_iterations:
+        while iterations < max_iterations and len(traversal_path) < len(self.hexagons):
             iterations += 1
             
-            # 确定下一步移动
-            next_hex = None
+            # 1. 检查当前位置是否为标记点，如果是则更新方向索引
+            if current_hex in all_marker_points:
+                current_direction_index = (current_direction_index + 1) % 6
             
-            # 1. 如果在特殊点触发的向东移动状态
-            if is_moving_east:
-                # 向东移动
-                east_q = current_hex[0] + 1  # 向东: q+1
-                east_r = current_hex[1]      # 向东: r不变
-                east_hex = (east_q, east_r)
-                
-                if east_hex in self.hexagons:
-                    next_hex = east_hex
-                    
-                    # 如果遇到标记点，结束向东移动状态
-                    if next_hex in all_marker_points:
-                        is_moving_east = False
-                        
-                        # 找出这个标记点是哪一层的什么角点，更新当前位置信息
-                        found_corner = False
-                        for layer, corners in corner_points_by_layer.items():
-                            for label, point in corners.items():
-                                if point == next_hex:
-                                    current_layer = layer
-                                    current_corner_idx = corner_sequence.index(label)
-                                    next_corner_idx = (current_corner_idx + 1) % len(corner_sequence)
-                                    found_corner = True
-                                    break
-                            if found_corner:
-                                break
-                else:
-                    # 无法继续向东，结束向东移动状态
-                    is_moving_east = False
-                    continue
+            # 2. 根据当前方向移动
+            next_direction = direction_vectors[current_direction_index]
+            next_q = current_hex[0] + next_direction[0]
+            next_r = current_hex[1] + next_direction[1]
+            next_hex = (next_q, next_r)
             
-            # 2. 常规移动状态
-            else:
-                # 先检查当前位置是否为特殊点，特殊点优先级高于角点
-                if current_hex in special_points and not is_moving_east:
-                    is_moving_east = True
-                    is_after_w_point = False  # 重置W点标记
-                    continue  # 重新开始循环，进入向东移动状态
-                
-                # 检查是否是从W点过来，需要检查下一个点是否为特殊点
-                if is_after_w_point:
-                    # 检查当前层是否有特殊点
-                    if current_layer in special_points_by_layer:
-                        sp_hex = special_points_by_layer[current_layer]
-                        # 确定从W点到特殊点的方向
-                        direction = self._get_step_towards_target(current_hex, sp_hex)
-                        if direction:
-                            next_q = current_hex[0] + direction[0]
-                            next_r = current_hex[1] + direction[1]
-                            next_hex = (next_q, next_r)
-                            
-                            if next_hex in self.hexagons:
-                                current_hex = next_hex
-                                if current_hex not in visited_on_traversal:
-                                    traversal_path.append(current_hex)
-                                    visited_on_traversal.add(current_hex)
-                                
-                                # 继续向特殊点方向前进
-                                is_after_w_point = False
-                                continue
-                    
-                    # 如果没有特殊点或无法前进到特殊点，重置标记并继续正常移动
-                    is_after_w_point = False
-                
-                # 确定当前层的下一个目标角点
-                next_corner_label = corner_sequence[next_corner_idx]
-                
-                # 如果是内层的NW，则跳过（因为内层NW不是标记点）
-                if next_corner_label == "NW" and current_layer < self.t:
-                    next_corner_idx = (next_corner_idx + 1) % len(corner_sequence)
-                    next_corner_label = corner_sequence[next_corner_idx]
-                
-                # 获取目标点坐标
-                if current_layer in corner_points_by_layer and next_corner_label in corner_points_by_layer[current_layer]:
-                    target_hex = corner_points_by_layer[current_layer][next_corner_label]
-                    
-                    # 计算朝向目标的方向
-                    direction = self._get_step_towards_target(current_hex, target_hex)
-                    
-                    if direction:
-                        next_q = current_hex[0] + direction[0]
-                        next_r = current_hex[1] + direction[1]
-                        next_hex = (next_q, next_r)
-                        
-                        # 检查是否越界
-                        if next_hex not in self.hexagons:
-                            # 撞墙了，试着进入下一个角点
-                            next_corner_idx = (next_corner_idx + 1) % len(corner_sequence)
-                            continue
-                    else:
-                        # 如果当前已经到达目标
-                        if current_hex == target_hex:
-                            # 如果当前到达的是W角点，标记需要检查特殊点
-                            if next_corner_label == "W":
-                                is_after_w_point = True
-                            
-                            # 移动到下一个目标
-                            current_corner_idx = next_corner_idx
-                            next_corner_idx = (next_corner_idx + 1) % len(corner_sequence)
-                            
-                            # 检查是否需要转入内层
-                            if next_corner_idx == 0 and current_layer > 1:  # 如果下一个是NW且不在最外层
-                                # 完成一层，进入内层
-                                current_layer -= 1
-                            
-                            continue
-                        else:
-                            # 无法找到方向但未到达目标，尝试下一个目标
-                            next_corner_idx = (next_corner_idx + 1) % len(corner_sequence)
-                            continue
-                else:
-                    # 目标角点不存在，尝试下一个
-                    next_corner_idx = (next_corner_idx + 1) % len(corner_sequence)
-                    
-                    # 如果已转一圈都没找到，进入内层
-                    if next_corner_idx == 0 and current_layer > 1:
-                        current_layer -= 1
-                    
-                    continue
+            # 3. 检查下一步是否在网格内，如果不在则尝试转向
+            if next_hex not in self.hexagons:
+                # 如果撞墙，尝试转向
+                for i in range(5):  # 尝试最多5次其他方向
+                    current_direction_index = (current_direction_index + 1) % 6
+                    next_direction = direction_vectors[current_direction_index]
+                    next_q = current_hex[0] + next_direction[0]
+                    next_r = current_hex[1] + next_direction[1]
+                    next_hex = (next_q, next_r)
+                    if next_hex in self.hexagons:
+                        break
             
-            # 执行移动
-            if next_hex:
+            # 4. 如果找到有效的下一步，则移动
+            if next_hex in self.hexagons:
                 current_hex = next_hex
                 if current_hex not in visited_on_traversal:
                     traversal_path.append(current_hex)
                     visited_on_traversal.add(current_hex)
-                
-                # 检查是否到达标记点
-                if current_hex in all_marker_points and not is_moving_east:
-                    # 找出这是哪一层的什么角点
-                    for layer, corners in corner_points_by_layer.items():
-                        found = False
-                        for label, point in corners.items():
-                            if point == current_hex:
-                                current_layer = layer
-                                current_corner_idx = corner_sequence.index(label)
-                                next_corner_idx = (current_corner_idx + 1) % len(corner_sequence)
-                                # 如果当前到达的是W角点，标记需要检查特殊点
-                                if label == "W":
-                                    is_after_w_point = True
-                                found = True
-                                break
-                        if found:
-                            break
+            else:
+                # 如果所有方向都撞墙，可能陷入死胡同，终止遍历
+                break
             
-            # 终止条件：到达最内层且走完关键点
-            if current_layer == 1:
-                # 对于奇数t，确保路径包含足够多的六边形
-                # 对于偶数t，确保路径覆盖足够多的层
-                min_required_hexes = 0
-                if self.t % 2 == 1:  # 奇数t
-                    min_required_hexes = 3 * self.t * self.t  # 粗略估计，需要覆盖大部分六边形
-                else:  # 偶数t
-                    min_required_hexes = 2 * self.t * self.t  # 粗略估计，需要覆盖一半以上的六边形
-                
+            # 5. 检查终止条件
+            # 对于最内层，确保路径覆盖足够多的六边形
+            if current_layer == 1 or (current_hex in corner_points_by_layer.get(1, {}).values()):
+                # 如果到达了内层的任意角点，并且路径够长
+                min_required_hexes = max(3 * self.t * self.t // 2, 1)  # 粗略估计，确保覆盖足够多的六边形
                 if len(traversal_path) >= min_required_hexes:
-                    if current_hex == corner_points_by_layer.get(1, {}).get("NE", None):
+                    # 如果到达内层东北角，或者已经访问了内层的所有角点
+                    inner_ne = corner_points_by_layer.get(1, {}).get("NE")
+                    if current_hex == inner_ne:
                         break
-                    # 奇数t时要确保完成了内层所有角点
-                    elif self.t % 2 == 1 and len(visited_on_traversal) >= min_required_hexes:
+                    
+                    # 或者当前在内层，检查是否已经访问了所有内层角点
+                    if current_hex in corner_points_by_layer.get(1, {}).values():
                         inner_corners_visited = True
                         for label in ["NE", "E", "SE", "SW", "W"]:
                             if label in corner_points_by_layer.get(1, {}) and corner_points_by_layer[1][label] not in visited_on_traversal:
@@ -872,10 +756,6 @@ class HexGrid:
                                 break
                         if inner_corners_visited:
                             break
-            
-            # 或者当路径足够长，超过总六边形数量时也可终止
-            if len(traversal_path) >= len(self.hexagons):
-                break
         
         return traversal_path
 
