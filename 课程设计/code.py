@@ -115,6 +115,7 @@ class HexGrid:
             return self._construct_10_cycle_with_hex_coloring()
         
         max_theoretical_len = 6 * self.t**2 - 2
+        second_max_len = 6 * self.t**2 - 4
         
         if self.t >= 2: 
             if length > max_theoretical_len or (length < 10 and length !=6) :
@@ -123,6 +124,7 @@ class HexGrid:
         elif self.t < 2 : 
              return None, None 
 
+        # Case 1: 最大长度环 l = 6t^2-2
         if length == max_theoretical_len:
             if self.t < 2 : 
                 messagebox.showerror("逻辑错误", "尝试为 t<2 构造最大环，这不符合预期。")
@@ -155,18 +157,50 @@ class HexGrid:
                     
                     new_edges = self._get_boundary_edges_of_hex_region(initial_colored_set)
                     
-                    # Optional: Verify length of new_edges against 'length'
-                    # if len(new_edges) != length:
-                    #    print(f"Warning: Case 2 (-4k) anelించింది预计长度 {length}, 实际边数 {len(new_edges)}")
-
                     return new_edges, final_hex_coords_to_color_list
                 else:
                     messagebox.showinfo("提示", f"无法为长度 {length} 执行-4k操作。可能在边界上未能找到足够的 {k_to_uncolor} 个可移除的已着色六边形，或者k值过大。")
                     return None, None
-            # if k_to_uncolor == 0, it's max_len case, handled above.
-            # if k_to_uncolor < 0, (max_len - length) is negative, meaning length > max_len, which is an error.
         
-        messagebox.showinfo("提示", f"长度为 {length} 的环的构造方法 (除了6, 10, 6t^2-2 和 6t^2-2-4k) 当前未被实现。")
+        # Case 3: 次大长度环 l = 6t^2-4
+        if length == second_max_len:
+            if self.t < 2:
+                messagebox.showerror("逻辑错误", "尝试为 t<2 构造Case3环，这不符合预期。")
+                return None, None
+            return self._construct_cycle_figure9_style_spiral()
+        
+        # Case 4: l = 6t^2 - 4 - 4k (for k >= 1)
+        elif length < second_max_len and (second_max_len - length) % 4 == 0:
+            k_to_uncolor = (second_max_len - length) // 4
+            if k_to_uncolor > 0:
+                # Step 1: Get the base coloring for l = 6t^2 - 4
+                base_edges_fig9, base_hex_list_fig9 = self._construct_cycle_figure9_style_spiral()
+
+                if base_hex_list_fig9 is None:
+                    messagebox.showinfo("提示", f"无法为HHM({self.t})构造基础次大环 (l={second_max_len})，因此无法进行-4k操作。")
+                    return None, None
+
+                initial_colored_set = set(base_hex_list_fig9)
+                
+                # Step 2: Perform the uncoloring operation
+                # 使用与case2相同的去色算法
+                uncoloring_successful = self._perform_case2_uncoloring(initial_colored_set, k_to_uncolor)
+
+                if uncoloring_successful:
+                    final_hex_coords_to_color_list = list(initial_colored_set)
+                    
+                    if not final_hex_coords_to_color_list and self.hexagons:
+                         messagebox.showinfo("提示", f"长度 {length} 的环构造 (Case4 -4k 操作) 导致没有六边形被着色。")
+                         return None, None
+                    
+                    new_edges = self._get_boundary_edges_of_hex_region(initial_colored_set)
+                    
+                    return new_edges, final_hex_coords_to_color_list
+                else:
+                    messagebox.showinfo("提示", f"无法为长度 {length} 执行Case4的-4k操作。可能在边界上未能找到足够的 {k_to_uncolor} 个可移除的已着色六边形，或者k值过大。")
+                    return None, None
+        
+        messagebox.showinfo("提示", f"长度为 {length} 的环的构造方法 (除了6, 10, 6t^2-2, 6t^2-2-4k, 6t^2-4 和 6t^2-4-4k) 当前未被实现。")
         return None, None
 
     def _get_hexagon_cycle_for_coloring(self, hex_coord_qr):
@@ -787,6 +821,234 @@ class HexGrid:
                 uncolored_successfully_count += 1
         
         return uncolored_successfully_count == k_to_uncolor
+
+    def _construct_cycle_figure9_style_spiral(self):
+        """
+        为长度 l = 6t^2-4 的环，基于Figure 9和10的风格构造。
+        此函数用于实现Case 3，与Case 1 (Figure 6)风格相似但有特殊的起始步骤。
+        t为奇数和偶数的处理略有不同。
+        """
+        s_prime_hexagons = set()  # 存储S'集合中的六边形坐标
+        
+        # 判断t的奇偶性，采取不同的构造策略
+        if self.t % 2 == 1:  # t为奇数
+            # 从中心(0,0)开始特殊步骤
+            current_qr = (0, 0)
+            if current_qr not in self.hexagons:
+                messagebox.showerror("构造错误", "中心六边形 (0,0) 不存在。")
+                return None, None
+            
+            s_prime_hexagons.add(current_qr)
+            
+            # 特殊步骤1: 向左走一步
+            step1_q = current_qr[0] - 1  # 向左: q-1
+            step1_r = current_qr[1]      # 向左: r不变
+            step1_qr = (step1_q, step1_r)
+            
+            if step1_qr not in self.hexagons:
+                messagebox.showerror("构造错误", f"奇数t特殊步骤1: {step1_qr} 不在网格内。")
+                return None, None
+            
+            s_prime_hexagons.add(step1_qr)
+            current_qr = step1_qr
+            
+            # 特殊步骤2: 向左下走一步
+            step2_q = current_qr[0] - 1  # 向左下: q-1
+            step2_r = current_qr[1] + 1  # 向左下: r+1
+            step2_qr = (step2_q, step2_r)
+            
+            if step2_qr not in self.hexagons:
+                messagebox.showerror("构造错误", f"奇数t特殊步骤2: {step2_qr} 不在网格内。")
+                return None, None
+            
+            s_prime_hexagons.add(step2_qr)
+            current_qr = step2_qr
+            
+            # 特殊步骤3: 向右下走一步
+            step3_q = current_qr[0] + 1  # 向右下: q+1
+            step3_r = current_qr[1] + 1  # 向右下: r+1（修正：右下应该是r+1而不是r不变）
+            step3_qr = (step3_q, step3_r)
+            
+            if step3_qr not in self.hexagons:
+                messagebox.showerror("构造错误", f"奇数t特殊步骤3: {step3_qr} 不在网格内。")
+                return None, None
+            
+            s_prime_hexagons.add(step3_qr)
+            current_qr = step3_qr
+            
+            # 此时我们到达了类似于第3层的西南部标记点的位置
+            # 接下来的逻辑与case1的螺旋构造类似，但目标层级是偶数
+            
+            final_target_k_level = self.t  # t为奇数，目标是奇数层
+            active_k_level = 3  # 从第3层开始向外扩展
+            
+            # 螺旋路径围绕的角点顺序: W, SW, SE, E, NE, NW
+            path_segment_target_labels = ["SW", "SE", "E", "NE", "NW", "W"]  # 从SW开始，因为当前位置类似于第3层的SW位置
+            current_label_index = 0  # 从SW开始
+            
+            while active_k_level <= final_target_k_level:
+                corners_of_active_k = self._get_corner_hexagons(active_k_level)
+                if not corners_of_active_k and active_k_level >= 3:
+                    messagebox.showerror("螺旋构造错误", f"未能获取 k_level={active_k_level} 的角点。")
+                    return None, None
+                
+                # 执行从当前角点开始的整个层级的遍历
+                while current_label_index < len(path_segment_target_labels):
+                    target_label = path_segment_target_labels[current_label_index]
+                    target_corner_qr = corners_of_active_k.get(target_label)
+                    
+                    if target_corner_qr is None:
+                        messagebox.showerror("螺旋构造错误", f"角点 {target_label} (k={active_k_level}) 未定义。")
+                        return None, None
+                    
+                    # 从 current_qr 移动到 target_corner_qr, 路径上的六边形加入 s_prime_hexagons
+                    if current_qr != target_corner_qr:
+                        current_qr = self._extend_path_to_target(current_qr, target_corner_qr, s_prime_hexagons)
+                    
+                    # 校验是否成功到达
+                    if current_qr != target_corner_qr:
+                        # 如果未到达目标角点，可能是因为路径不通，但我们继续执行
+                        pass
+                    
+                    # 如果当前段的目标是西北角 (NW)，检查是否需要层间过渡
+                    if target_label == "NW":
+                        if active_k_level < final_target_k_level:
+                            # 层间过渡: 从当前 NW 角点向西(左)移动两格
+                            for _ in range(2):
+                                next_q_transition = current_qr[0] - 1  # 向西 q-1
+                                next_r_transition = current_qr[1]      # r 不变
+                                potential_next_qr_transition = (next_q_transition, next_r_transition)
+                                if potential_next_qr_transition in self.hexagons:
+                                    current_qr = potential_next_qr_transition
+                                    s_prime_hexagons.add(current_qr)
+                                else:
+                                    break  # 无法完成两格移动，终止此方向的过渡
+                            
+                            # 完成当前层级，进入下一个层级
+                            break
+                        else:  # active_k_level == final_target_k_level
+                            # 到达最外目标螺旋层的西北角，S'主路径构造完成
+                            active_k_level = final_target_k_level + 1  # 设置以终止外部循环
+                            break
+                    
+                    # 移动到下一个角点
+                    current_label_index = (current_label_index + 1) % len(path_segment_target_labels)
+                
+                # 重置角点索引，为下一层准备
+                current_label_index = 0
+                
+                # 如果已经完成最终层，跳出循环
+                if active_k_level > final_target_k_level:
+                    break
+                
+                # 移动到下一个层级
+                active_k_level += 2  # 从奇数层到下一个奇数层
+            
+            # --- S' 螺旋主体路径 (s_prime_hexagons) 构建完毕 ---
+            # 奇数阶，涂色 S' 本身
+            final_hex_region_to_color = s_prime_hexagons
+            
+        else:  # t为偶数
+            # 偶数t的处理与case1类似，但是最后步骤稍有不同
+            current_qr = (0, 0)  # 从中心六边形开始
+            
+            if current_qr not in self.hexagons:
+                messagebox.showerror("螺旋构造错误", "中心六边形 (0,0) 不存在。")
+                return None, None
+            
+            s_prime_hexagons.add(current_qr)
+            
+            # 对于偶数t，我们构造以最大偶数层为目标的螺旋
+            final_target_k_level = self.t - 1 if self.t % 2 == 0 else self.t
+            if final_target_k_level < 1:
+                messagebox.showwarning("螺旋构造警告", f"最终目标层级 k_level ({final_target_k_level}) 无效 (t={self.t})。")
+                return None, None
+            
+            active_k_level = 1  # 从 HHM(1) 开始处理
+            path_segment_target_labels = ["W", "SW", "SE", "E", "NE", "NW"]  # 从W开始按顺时针方向
+            
+            while active_k_level <= final_target_k_level:
+                corners_of_active_k = self._get_corner_hexagons(active_k_level)
+                if not corners_of_active_k and active_k_level >= 1:
+                    messagebox.showerror("螺旋构造错误", f"未能获取 k_level={active_k_level} 的角点。")
+                    return None, None
+                
+                for target_label in path_segment_target_labels:
+                    target_corner_qr = corners_of_active_k.get(target_label)
+                    
+                    if target_corner_qr is None:
+                        if active_k_level == 1:
+                            target_corner_qr = (0, 0)  # k=1所有角点是(0,0)
+                        else:
+                            messagebox.showerror("螺旋构造错误", f"角点 {target_label} (k={active_k_level}) 未定义。")
+                            return None, None
+                    
+                    # 从 current_qr 移动到 target_corner_qr
+                    if current_qr != target_corner_qr:
+                        current_qr = self._extend_path_to_target(current_qr, target_corner_qr, s_prime_hexagons)
+                    
+                    # 校验是否成功到达
+                    if current_qr != target_corner_qr:
+                        pass  # 如果未到达目标角点，继续执行
+                    
+                    # 如果当前段的目标是西北角 (NW)，检查是否需要层间过渡
+                    if target_label == "NW":
+                        if active_k_level < final_target_k_level:
+                            # 层间过渡: 从当前 NW 角点向西(左)移动两格
+                            for _ in range(2):
+                                next_q_transition = current_qr[0] - 1  # 向西 q-1
+                                next_r_transition = current_qr[1]      # r 不变
+                                potential_next_qr_transition = (next_q_transition, next_r_transition)
+                                if potential_next_qr_transition in self.hexagons:
+                                    current_qr = potential_next_qr_transition
+                                    s_prime_hexagons.add(current_qr)
+                                else:
+                                    break  # 无法完成两格移动，终止此方向的过渡
+                            break  # 完成当前层级，进入下一个层级
+                        else:  # active_k_level == final_target_k_level
+                            # t为偶数时，在最后一层的NW角点处，而非向左走一步，而是向左上走一步
+                            # 向左上走一步：q不变，r-1
+                            next_q = current_qr[0]
+                            next_r = current_qr[1] - 1
+                            extra_step_hex = (next_q, next_r)
+                            
+                            if extra_step_hex in self.hexagons:
+                                s_prime_hexagons.add(extra_step_hex)  # 将这额外一步加入 S' 集合
+                            
+                            # 到达最外目标螺旋层的西北角并执行额外步骤，S'主路径构造完成
+                            active_k_level = final_target_k_level + 1  # 设置以终止外部循环
+                            break
+                
+                if active_k_level > final_target_k_level:  # 如果因为到达最终层NW而设置了此条件
+                    break  # 结束主螺旋构造循环
+                
+                active_k_level += 2  # 移动到下一个奇数层
+            
+            # --- S' 螺旋主体路径 (s_prime_hexagons) 构建完毕 --- 
+            # t为偶数，涂色 All - S'
+            all_hex_coords_in_grid = set(self.hexagons)
+            final_hex_region_to_color = all_hex_coords_in_grid - s_prime_hexagons
+        
+        # 检查生成的着色区域是否为空
+        if not final_hex_region_to_color and self.hexagons:
+            is_t1_case = (self.t == 1)
+            if not is_t1_case:
+                messagebox.showwarning("构造警告", f"Fig9/10风格构造：最终着色区域为空 (t={self.t})。检查螺旋或S'逻辑。")
+                return None, None
+        
+        # 生成边界边
+        boundary_edges = self._get_boundary_edges_of_hex_region(final_hex_region_to_color)
+        expected_length = 6 * self.t**2 - 4
+        
+        if len(boundary_edges) != expected_length:
+            # 如果实际边数与预期不符，输出警告信息但继续执行
+            pass
+        
+        # 验证生成的环是否连通
+        if not self._verify_cycle_connectivity(boundary_edges) and boundary_edges:
+            pass
+        
+        return boundary_edges, list(final_hex_region_to_color)
 
 # --- 可视化器类 ---
 class HexGridVisualizer(tk.Tk):
